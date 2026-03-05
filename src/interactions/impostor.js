@@ -8,7 +8,7 @@ StringSelectMenuBuilder
 const games = require("../systems/games");
 
 const MAX_PLAYERS = 10;
-const MIN_PLAYERS = 3;
+const MIN_PLAYERS = 2;
 
 function pickRandom(arr){
 return arr[Math.floor(Math.random()*arr.length)];
