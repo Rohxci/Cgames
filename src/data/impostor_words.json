@@ -1,0 +1,7 @@
+{
+  "Food": ["Pizza", "Sushi", "Burger", "Pasta", "Tacos", "Ice Cream", "Salad", "Steak", "Chocolate", "Ramen"],
+  "Places": ["Airport", "Beach", "School", "Museum", "Hospital", "Cinema", "Restaurant", "Train Station", "Hotel", "Park"],
+  "Animals": ["Cat", "Dog", "Shark", "Eagle", "Horse", "Dolphin", "Tiger", "Panda", "Snake", "Rabbit"],
+  "Jobs": ["Doctor", "Teacher", "Pilot", "Chef", "Police Officer", "Firefighter", "Dentist", "Engineer", "Cashier", "Bartender"],
+  "Objects": ["Phone", "Laptop", "Backpack", "Camera", "Bicycle", "Watch", "Keyboard", "Headphones", "Umbrella", "Wallet"]
+}
