@@ -1,41 +1,37 @@
 const {
-SlashCommandBuilder,
 ActionRowBuilder,
 ButtonBuilder,
-ButtonStyle
+ButtonStyle,
+StringSelectMenuBuilder
 } = require("discord.js");
 
 const games = require("../systems/games");
-const createEmbed = require("../utils/embed");
-const channelCheck = require("../utils/channelCheck");
 
 const MAX_PLAYERS = 10;
+const MIN_PLAYERS = 2;
 
-function lobbyEmbed(state){
+function pickRandom(arr) {
+return arr[Math.floor(Math.random() * arr.length)];
+}
 
-const players = state.players.map(p=>`• <@${p}>`).join("\n");
+function lobbyEmbed(state) {
 
-return createEmbed(
-"🎭 Impostor Lobby",
-`Players: ${state.players.length}/${MAX_PLAYERS}
+const players = state.players.map(p => `• <@${p}>`).join("\n");
+
+return {
+title: "🎭 Impostor Lobby",
+description: `Players: ${state.players.length}/${MAX_PLAYERS}
 
 Host: <@${state.hostId}>
 
-Rules
-• 1 impostor
-• Crew gets the secret word
-• Impostor only sees the category
-• Discuss in chat
-• Vote to find the impostor
-
 ${players}`
-);
+};
 
 }
 
-function lobbyButtons(){
+function lobbyButtons() {
 
-return[
+return [
 new ActionRowBuilder().addComponents(
 
 new ButtonBuilder()
@@ -50,7 +46,7 @@ new ButtonBuilder()
 
 new ButtonBuilder()
 .setCustomId("imp_start")
-.setLabel("Start Game")
+.setLabel("Start")
 .setStyle(ButtonStyle.Primary),
 
 new ButtonBuilder()
@@ -65,148 +61,184 @@ new ButtonBuilder()
 
 module.exports = {
 
-data: new SlashCommandBuilder()
-.setName("impostor")
-.setDescription("Start an Impostor game"),
+match(interaction) {
 
-async execute(interaction){
+return interaction.customId?.startsWith("imp_");
 
-if(!channelCheck(interaction)) return;
+},
 
-/* prevent multiple games */
+async run(interaction) {
 
-if(games.get(interaction.channelId)){
+const state = games.get(interaction.channelId);
+if (!state || state.type !== "impostor") return;
+
+const id = interaction.customId;
+
+/* JOIN */
+
+if (id === "imp_join") {
+
+if (!state.players.includes(interaction.user.id)) {
+state.players.push(interaction.user.id);
+}
+
+await interaction.update({
+embeds: [lobbyEmbed(state)],
+components: lobbyButtons()
+});
+
+return;
+
+}
+
+/* LEAVE */
+
+if (id === "imp_leave") {
+
+state.players = state.players.filter(p => p !== interaction.user.id);
+
+await interaction.update({
+embeds: [lobbyEmbed(state)],
+components: lobbyButtons()
+});
+
+return;
+
+}
+
+/* CANCEL */
+
+if (id === "imp_cancel") {
+
+games.delete(interaction.channelId);
+
+await interaction.update({
+content: "Game cancelled.",
+embeds: [],
+components: []
+});
+
+return;
+
+}
+
+/* START */
+
+if (id === "imp_start") {
+
+if (state.players.length < MIN_PLAYERS) {
 
 return interaction.reply({
-content:"A game is already running in this channel.",
-ephemeral:true
+content: "Need at least 3 players.",
+ephemeral: true
 });
 
 }
 
-const state = {
+state.impostor = pickRandom(state.players);
 
-type:"impostor",
-hostId: interaction.user.id,
-players:[interaction.user.id],
-phase:"lobby"
+await interaction.update({
 
-};
-
-games.create(interaction.channelId,state);
-
-await interaction.reply({
-
-embeds:[lobbyEmbed(state)],
-components:lobbyButtons()
-
-});
-
-}
-
-};const {
-SlashCommandBuilder,
-ActionRowBuilder,
-ButtonBuilder,
-ButtonStyle
-} = require("discord.js");
-
-const games = require("../systems/games");
-const createEmbed = require("../utils/embed");
-const channelCheck = require("../utils/channelCheck");
-
-const MAX_PLAYERS = 10;
-
-function lobbyEmbed(state){
-
-const players = state.players.map(p=>`• <@${p}>`).join("\n");
-
-return createEmbed(
-"🎭 Impostor Lobby",
-`Players: ${state.players.length}/${MAX_PLAYERS}
-
-Host: <@${state.hostId}>
-
-Rules
-• 1 impostor
-• Crew gets the secret word
-• Impostor only sees the category
-• Discuss in chat
-• Vote to find the impostor
-
-${players}`
-);
-
-}
-
-function lobbyButtons(){
-
-return[
+content: "Roles assigned. Discuss in chat, then vote.",
+embeds: [],
+components: [
 new ActionRowBuilder().addComponents(
 
 new ButtonBuilder()
-.setCustomId("imp_join")
-.setLabel("Join")
-.setStyle(ButtonStyle.Success),
-
-new ButtonBuilder()
-.setCustomId("imp_leave")
-.setLabel("Leave")
-.setStyle(ButtonStyle.Secondary),
-
-new ButtonBuilder()
-.setCustomId("imp_start")
-.setLabel("Start Game")
-.setStyle(ButtonStyle.Primary),
-
-new ButtonBuilder()
-.setCustomId("imp_cancel")
-.setLabel("Cancel")
-.setStyle(ButtonStyle.Danger)
+.setCustomId("imp_vote_start")
+.setLabel("Start Vote")
+.setStyle(ButtonStyle.Primary)
 
 )
-];
+]
+
+});
+
+return;
 
 }
 
-module.exports = {
+/* START VOTE */
 
-data: new SlashCommandBuilder()
-.setName("impostor")
-.setDescription("Start an Impostor game"),
+if (id === "imp_vote_start") {
 
-async execute(interaction){
+const options = [];
 
-if(!channelCheck(interaction)) return;
+for (const p of state.players) {
 
-/* prevent multiple games */
+const member = await interaction.guild.members.fetch(p).catch(() => null);
+const name = member ? member.displayName : p;
 
-if(games.get(interaction.channelId)){
-
-return interaction.reply({
-content:"A game is already running in this channel.",
-ephemeral:true
+options.push({
+label: name.slice(0, 100),
+value: p
 });
 
 }
 
-const state = {
+const menu = new StringSelectMenuBuilder()
+.setCustomId("imp_vote")
+.setPlaceholder("Vote the impostor")
+.addOptions(options);
 
-type:"impostor",
-hostId: interaction.user.id,
-players:[interaction.user.id],
-phase:"lobby"
+await interaction.update({
 
-};
+content: "🗳 Voting phase",
+components: [
+new ActionRowBuilder().addComponents(menu)
+]
 
-games.create(interaction.channelId,state);
+});
+
+return;
+
+}
+
+/* VOTE */
+
+if (interaction.isStringSelectMenu() && id === "imp_vote") {
+
+state.votes = state.votes || {};
+state.votes[interaction.user.id] = interaction.values[0];
 
 await interaction.reply({
-
-embeds:[lobbyEmbed(state)],
-components:lobbyButtons()
-
+content: "Vote registered.",
+ephemeral: true
 });
+
+if (Object.keys(state.votes).length === state.players.length) {
+
+const counts = {};
+
+Object.values(state.votes).forEach(v => {
+counts[v] = (counts[v] || 0) + 1;
+});
+
+let max = 0;
+let voted = null;
+
+for (const k in counts) {
+if (counts[k] > max) {
+max = counts[k];
+voted = k;
+}
+}
+
+const crewWin = voted === state.impostor;
+
+games.delete(interaction.channelId);
+
+await interaction.channel.send({
+content: `🎭 Game Over
+
+Impostor: <@${state.impostor}>
+
+${crewWin ? "Crew wins!" : "Impostor wins!"}`
+});
+
+}
+
+}
 
 }
 
