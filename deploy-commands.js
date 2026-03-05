@@ -1,37 +1,45 @@
 require("dotenv").config();
 
-const { REST, Routes, SlashCommandBuilder } = require("discord.js");
+const fs = require("fs");
+const path = require("path");
 
-const commands = [
+const { REST, Routes } = require("discord.js");
 
-new SlashCommandBuilder()
-.setName("ping")
-.setDescription("Check if the bot is online"),
+const commands = [];
 
-new SlashCommandBuilder()
-.setName("coinflip")
-.setDescription("Flip a coin")
+const commandsPath = path.join(__dirname, "src", "commands");
 
-].map(command => command.toJSON());
+const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith(".js"));
+
+for (const file of commandFiles) {
+
+const command = require(`./src/commands/${file}`);
+commands.push(command.data.toJSON());
+
+}
 
 const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
 
 (async () => {
-  try {
 
-    console.log("Deploying commands...");
+try {
 
-    await rest.put(
-      Routes.applicationGuildCommands(
-        process.env.CLIENT_ID,
-        process.env.GUILD_ID
-      ),
-      { body: commands }
-    );
+console.log("Deploying commands...");
 
-    console.log("Commands deployed.");
+await rest.put(
+Routes.applicationGuildCommands(
+process.env.CLIENT_ID,
+process.env.GUILD_ID
+),
+{ body: commands }
+);
 
-  } catch (error) {
-    console.error(error);
-  }
+console.log("Commands deployed.");
+
+} catch (error) {
+
+console.error(error);
+
+}
+
 })();
