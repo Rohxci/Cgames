@@ -10,7 +10,13 @@ const games = require("../systems/games");
 const MAX_PLAYERS = 10;
 const MIN_PLAYERS = 2;
 
-function pickRandom(arr){
+const WORDS = {
+places:["Beach","Airport","School","Restaurant","Hospital","Cinema"],
+food:["Pizza","Burger","Pasta","Sushi","Ice Cream"],
+animals:["Dog","Cat","Lion","Elephant","Giraffe"]
+};
+
+function random(arr){
 return arr[Math.floor(Math.random()*arr.length)];
 }
 
@@ -145,24 +151,73 @@ ephemeral:true
 });
 }
 
-state.impostor = pickRandom(state.players);
+/* assign roles */
+
+state.impostor = random(state.players);
+
+const categories = Object.keys(WORDS);
+state.category = random(categories);
+state.word = random(WORDS[state.category]);
+
+/* reveal button */
 
 await interaction.update({
 
-content:"Roles assigned. Discuss in chat, then start the vote.",
-embeds:[],
+embeds:[{
+title:"🎭 Reveal your role",
+description:"Click the button below to see your role."
+}],
+
 components:[
 new ActionRowBuilder().addComponents(
 
 new ButtonBuilder()
-.setCustomId("imp_vote_start")
-.setLabel("Start Vote")
-.setStyle(ButtonStyle.Primary)
+.setCustomId("imp_reveal")
+.setLabel("Reveal Role")
+.setStyle(ButtonStyle.Success)
 
 )
 ]
 
 });
+
+return;
+
+}
+
+/* REVEAL ROLE */
+
+if(id==="imp_reveal"){
+
+if(interaction.user.id === state.impostor){
+
+await interaction.reply({
+ephemeral:true,
+embeds:[{
+title:"🎭 Your Role",
+description:`You are **THE IMPOSTOR**
+
+Category: **${state.category}**
+
+Blend in and don't get caught.`
+}]
+});
+
+}else{
+
+await interaction.reply({
+ephemeral:true,
+embeds:[{
+title:"🎭 Your Role",
+description:`You are **CREW**
+
+Word: **${state.word}**
+
+Find the impostor.`
+}]
+});
+
+}
 
 return;
 
