@@ -14,6 +14,7 @@ ButtonStyle
 } = require("discord.js");
 
 const createEmbed = require("./utils/embed");
+const games = require("./systems/games");
 
 const client = new Client({
 intents: [GatewayIntentBits.Guilds]
@@ -32,8 +33,6 @@ const command = require(filePath);
 client.commands.set(command.data.name, command);
 
 }
-
-let games = {};
 
 client.once("ready", () => {
 
@@ -68,30 +67,77 @@ ephemeral: true
 
 if (interaction.isButton()) {
 
-if (!interaction.customId.startsWith("ttt")) return;
+if (interaction.customId === "ttt_accept") {
 
-const game = games[interaction.channelId];
+const challenger = interaction.message.embeds[0].description.match(/<@(\d+)>/)[1];
 
-if (!game) return;
+const player1 = challenger;
+const player2 = interaction.user.id;
 
-const [_, row, col] = interaction.customId.split("_");
+const board = [
+["⬜","⬜","⬜"],
+["⬜","⬜","⬜"],
+["⬜","⬜","⬜"]
+];
 
-if (interaction.user.id !== game.turn) {
+games.create(interaction.channelId,{
+player1,
+player2,
+turn:player1,
+board
+});
 
-return interaction.reply({
-content: "It is not your turn.",
-ephemeral: true
+const embed = createEmbed(
+"🎮 TicTacToe",
+`<@${player1}> vs <@${player2}>\n\nTurn: <@${player1}>`
+);
+
+const rows = board.map((row,i)=>
+new ActionRowBuilder().addComponents(
+row.map((cell,j)=>
+new ButtonBuilder()
+.setCustomId(`ttt_${i}_${j}`)
+.setLabel(cell)
+.setStyle(ButtonStyle.Secondary)
+)
+)
+);
+
+await interaction.update({
+embeds:[embed],
+components:rows
 });
 
 }
 
-if (game.board[row][col] !== "⬜") {
+if (interaction.customId === "ttt_decline") {
 
-return interaction.reply({
-content: "This position is already taken.",
-ephemeral: true
+await interaction.update({
+embeds:[createEmbed("❌ Challenge Declined","The challenge was declined.")],
+components:[]
 });
 
+}
+
+if (interaction.customId.startsWith("ttt_")) {
+
+const game = games.get(interaction.channelId);
+if (!game) return;
+
+const [_,row,col] = interaction.customId.split("_");
+
+if (interaction.user.id !== game.turn) {
+return interaction.reply({
+content:"Not your turn.",
+ephemeral:true
+});
+}
+
+if (game.board[row][col] !== "⬜") {
+return interaction.reply({
+content:"Position already taken.",
+ephemeral:true
+});
 }
 
 const symbol = interaction.user.id === game.player1 ? "❌" : "⭕";
@@ -100,9 +146,9 @@ game.board[row][col] = symbol;
 
 game.turn = interaction.user.id === game.player1 ? game.player2 : game.player1;
 
-const rows = game.board.map((r,i) =>
+const rows = game.board.map((row,i)=>
 new ActionRowBuilder().addComponents(
-r.map((cell,j)=>
+row.map((cell,j)=>
 new ButtonBuilder()
 .setCustomId(`ttt_${i}_${j}`)
 .setLabel(cell)
@@ -119,8 +165,10 @@ const embed = createEmbed(
 
 await interaction.update({
 embeds:[embed],
-components: rows
+components:rows
 });
+
+}
 
 }
 
