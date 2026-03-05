@@ -1,11 +1,15 @@
-const GAMES_CHANNEL_ID = process.env.GAMES_CHANNEL_ID;
+const GAME_CHANNELS = process.env.GAMES_CHANNELS
+  ? process.env.GAMES_CHANNELS.split(",")
+  : [];
 
-module.exports = function channelCheck(interaction) {
+module.exports = async function channelCheck(interaction) {
 
-if (interaction.channelId !== GAMES_CHANNEL_ID) {
+if (GAME_CHANNELS.length === 0) return true;
 
-interaction.reply({
-content: `🎮 Please use game commands in <#${GAMES_CHANNEL_ID}>`,
+if (!GAME_CHANNELS.includes(interaction.channelId)) {
+
+await interaction.reply({
+content: `🎮 Please use game commands in a games channel.`,
 ephemeral: true
 });
 
