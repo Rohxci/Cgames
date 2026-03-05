@@ -15,7 +15,7 @@ const createEmbed = require("../utils/embed");
 const games = require("../systems/games");
 
 const MAX_PLAYERS = 10;
-const MIN_PLAYERS = 3;   // ✅ min 3 come vuoi tu
+const MIN_PLAYERS = 2;   // ✅ min 3 come vuoi tu
 const ROUNDS = 2;
 
 const WORDS_PATH = path.join(__dirname, "..", "data", "impostor_words.json");
