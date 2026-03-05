@@ -22,6 +22,8 @@ intents: [GatewayIntentBits.Guilds]
 
 client.commands = new Collection();
 
+/* LOAD COMMANDS */
+
 const commandsPath = path.join(__dirname, "commands");
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith(".js"));
 
@@ -34,18 +36,21 @@ client.commands.set(command.data.name, command);
 
 }
 
+/* READY */
+
 client.once("ready", () => {
 
 console.log(`Logged in as ${client.user.tag}`);
 
 });
 
+/* INTERACTIONS */
+
 client.on(Events.InteractionCreate, async interaction => {
 
 if (interaction.isChatInputCommand()) {
 
 const command = client.commands.get(interaction.commandName);
-
 if (!command) return;
 
 try {
@@ -65,20 +70,28 @@ ephemeral: true
 
 }
 
+/* BUTTON SYSTEM */
+
 if (interaction.isButton()) {
 
-if (interaction.customId.startsWith("ttt_accept")) {
+const id = interaction.customId;
 
-const parts = interaction.customId.split("_");
+/* ACCEPT CHALLENGE */
+
+if (id.startsWith("ttt_accept_")) {
+
+const parts = id.split("_");
 
 const challenger = parts[2];
 const opponent = parts[3];
 
 if (interaction.user.id !== opponent) {
+
 return interaction.reply({
 content: "Only the challenged player can accept.",
 ephemeral: true
 });
+
 }
 
 const board = [
@@ -117,17 +130,21 @@ components:rows
 
 }
 
-if (interaction.customId.startsWith("ttt_decline")) {
+/* DECLINE CHALLENGE */
 
-const parts = interaction.customId.split("_");
+if (id.startsWith("ttt_decline_")) {
+
+const parts = id.split("_");
 
 const opponent = parts[3];
 
 if (interaction.user.id !== opponent) {
+
 return interaction.reply({
 content: "Only the challenged player can decline.",
 ephemeral: true
 });
+
 }
 
 await interaction.update({
@@ -137,25 +154,31 @@ components:[]
 
 }
 
-if (interaction.customId.startsWith("ttt_")) {
+/* GRID CLICK */
+
+if (/^ttt_[0-2]_[0-2]$/.test(id)) {
 
 const game = games.get(interaction.channelId);
 if (!game) return;
 
-const [_,row,col] = interaction.customId.split("_");
+const [_,row,col] = id.split("_");
 
 if (interaction.user.id !== game.turn) {
+
 return interaction.reply({
 content:"Not your turn.",
 ephemeral:true
 });
+
 }
 
 if (game.board[row][col] !== "⬜") {
+
 return interaction.reply({
 content:"Position already taken.",
 ephemeral:true
 });
+
 }
 
 const symbol = interaction.user.id === game.player1 ? "❌" : "⭕";
@@ -163,6 +186,8 @@ const symbol = interaction.user.id === game.player1 ? "❌" : "⭕";
 game.board[row][col] = symbol;
 
 game.turn = interaction.user.id === game.player1 ? game.player2 : game.player1;
+
+/* UPDATE BOARD */
 
 const rows = game.board.map((row,i)=>
 new ActionRowBuilder().addComponents(
