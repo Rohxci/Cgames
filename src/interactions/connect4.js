@@ -17,7 +17,9 @@ Array.from({ length: COLS }, () => "⚪")
 }
 
 function boardToString(board){
-return board.map(r => r.join("")).join("\n");
+const grid = board.map(r => r.join("")).join("\n");
+const numbers = "1️⃣2️⃣3️⃣4️⃣5️⃣6️⃣7️⃣";
+return grid + "\n" + numbers;
 }
 
 function drop(board,col,symbol){
