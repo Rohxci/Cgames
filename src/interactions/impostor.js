@@ -8,7 +8,7 @@ StringSelectMenuBuilder
 const games = require("../systems/games");
 
 const MAX_PLAYERS = 10;
-const MIN_PLAYERS = 2;
+const MIN_PLAYERS = 3;
 
 const WORDS = {
 places:["Beach","Airport","School","Restaurant","Hospital","Cinema"],
@@ -151,15 +151,11 @@ ephemeral:true
 });
 }
 
-/* assign roles */
-
 state.impostor = random(state.players);
 
 const categories = Object.keys(WORDS);
 state.category = random(categories);
 state.word = random(WORDS[state.category]);
-
-/* reveal button */
 
 await interaction.update({
 
@@ -223,7 +219,7 @@ return;
 
 }
 
-/* START VOTE */
+/* START FINAL VOTE BUTTON */
 
 if(id==="imp_vote_start"){
 
@@ -255,7 +251,11 @@ const menu = new StringSelectMenuBuilder()
 
 await interaction.update({
 
-content:"🗳 Voting phase",
+embeds:[{
+title:"🗳 Final Vote",
+description:"Select who you think is the impostor."
+}],
+
 components:[
 new ActionRowBuilder().addComponents(menu)
 ]
@@ -301,11 +301,12 @@ const crewWin = voted === state.impostor;
 games.delete(interaction.channelId);
 
 await interaction.channel.send({
-content:`🎭 Game Over
+embeds:[{
+title:"🎭 Game Over",
+description:`Impostor: <@${state.impostor}>
 
-Impostor: <@${state.impostor}>
-
-${crewWin ? "Crew wins!" : "Impostor wins!"}`
+${crewWin ? "✅ Crew wins!" : "😈 Impostor wins!"}`
+}]
 });
 
 }
