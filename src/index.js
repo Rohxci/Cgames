@@ -1,16 +1,32 @@
 require("dotenv").config();
 
+const fs = require("fs");
+const path = require("path");
+
 const {
 Client,
+Collection,
 GatewayIntentBits,
 Events
 } = require("discord.js");
 
-const GAMES_CHANNEL_ID = process.env.GAMES_CHANNEL_ID;
-
 const client = new Client({
 intents: [GatewayIntentBits.Guilds]
 });
+
+client.commands = new Collection();
+
+const commandsPath = path.join(__dirname, "commands");
+const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith(".js"));
+
+for (const file of commandFiles) {
+
+const filePath = path.join(commandsPath, file);
+const command = require(filePath);
+
+client.commands.set(command.data.name, command);
+
+}
 
 client.once("ready", () => {
 
@@ -22,26 +38,22 @@ client.on(Events.InteractionCreate, async interaction => {
 
 if (!interaction.isChatInputCommand()) return;
 
-if (interaction.channelId !== GAMES_CHANNEL_ID) {
+const command = client.commands.get(interaction.commandName);
 
-return interaction.reply({
-content: `🎮 Please use game commands in <#${GAMES_CHANNEL_ID}>`,
+if (!command) return;
+
+try {
+
+await command.execute(interaction);
+
+} catch (error) {
+
+console.error(error);
+
+await interaction.reply({
+content: "There was an error executing this command.",
 ephemeral: true
 });
-
-}
-
-if (interaction.commandName === "ping") {
-
-await interaction.reply("🏓 Pong!");
-
-}
-
-if (interaction.commandName === "coinflip") {
-
-const result = Math.random() < 0.5 ? "Heads" : "Tails";
-
-await interaction.reply(`🪙 Coinflip: **${result}**`);
 
 }
 
