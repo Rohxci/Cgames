@@ -1,5 +1,6 @@
 const { SlashCommandBuilder } = require("discord.js");
 const channelCheck = require("../utils/channelCheck");
+const createEmbed = require("../utils/embed");
 
 module.exports = {
 
@@ -13,7 +14,12 @@ if (!channelCheck(interaction)) return;
 
 const result = Math.random() < 0.5 ? "Heads" : "Tails";
 
-await interaction.reply(`🪙 Coinflip: **${result}**`);
+const embed = createEmbed(
+"🪙 Coinflip",
+`Result: **${result}**`
+);
+
+await interaction.reply({ embeds: [embed] });
 
 }
 
