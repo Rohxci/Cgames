@@ -2,8 +2,6 @@ const { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } = re
 const channelCheck = require("../utils/channelCheck");
 const createEmbed = require("../utils/embed");
 
-let games = {};
-
 module.exports = {
 
 data: new SlashCommandBuilder()
@@ -22,33 +20,16 @@ if (!channelCheck(interaction)) return;
 const opponent = interaction.options.getUser("opponent");
 
 if (opponent.bot) {
-
 return interaction.reply({
 embeds: [createEmbed("❌ Error","You cannot challenge a bot.")]
 });
-
 }
 
 if (opponent.id === interaction.user.id) {
-
 return interaction.reply({
 embeds: [createEmbed("❌ Error","You cannot challenge yourself.")]
 });
-
 }
-
-const board = [
-["⬜","⬜","⬜"],
-["⬜","⬜","⬜"],
-["⬜","⬜","⬜"]
-];
-
-games[interaction.channelId] = {
-player1: interaction.user.id,
-player2: opponent.id,
-turn: interaction.user.id,
-board
-};
 
 const embed = createEmbed(
 "🎮 TicTacToe",
@@ -56,21 +37,21 @@ const embed = createEmbed(
 );
 
 const row1 = new ActionRowBuilder().addComponents(
-new ButtonBuilder().setCustomId("ttt_0_0").setLabel(" ").setStyle(ButtonStyle.Secondary),
-new ButtonBuilder().setCustomId("ttt_0_1").setLabel(" ").setStyle(ButtonStyle.Secondary),
-new ButtonBuilder().setCustomId("ttt_0_2").setLabel(" ").setStyle(ButtonStyle.Secondary)
+new ButtonBuilder().setCustomId("ttt_0_0").setLabel("⬜").setStyle(ButtonStyle.Secondary),
+new ButtonBuilder().setCustomId("ttt_0_1").setLabel("⬜").setStyle(ButtonStyle.Secondary),
+new ButtonBuilder().setCustomId("ttt_0_2").setLabel("⬜").setStyle(ButtonStyle.Secondary)
 );
 
 const row2 = new ActionRowBuilder().addComponents(
-new ButtonBuilder().setCustomId("ttt_1_0").setLabel(" ").setStyle(ButtonStyle.Secondary),
-new ButtonBuilder().setCustomId("ttt_1_1").setLabel(" ").setStyle(ButtonStyle.Secondary),
-new ButtonBuilder().setCustomId("ttt_1_2").setLabel(" ").setStyle(ButtonStyle.Secondary)
+new ButtonBuilder().setCustomId("ttt_1_0").setLabel("⬜").setStyle(ButtonStyle.Secondary),
+new ButtonBuilder().setCustomId("ttt_1_1").setLabel("⬜").setStyle(ButtonStyle.Secondary),
+new ButtonBuilder().setCustomId("ttt_1_2").setLabel("⬜").setStyle(ButtonStyle.Secondary)
 );
 
 const row3 = new ActionRowBuilder().addComponents(
-new ButtonBuilder().setCustomId("ttt_2_0").setLabel(" ").setStyle(ButtonStyle.Secondary),
-new ButtonBuilder().setCustomId("ttt_2_1").setLabel(" ").setStyle(ButtonStyle.Secondary),
-new ButtonBuilder().setCustomId("ttt_2_2").setLabel(" ").setStyle(ButtonStyle.Secondary)
+new ButtonBuilder().setCustomId("ttt_2_0").setLabel("⬜").setStyle(ButtonStyle.Secondary),
+new ButtonBuilder().setCustomId("ttt_2_1").setLabel("⬜").setStyle(ButtonStyle.Secondary),
+new ButtonBuilder().setCustomId("ttt_2_2").setLabel("⬜").setStyle(ButtonStyle.Secondary)
 );
 
 await interaction.reply({
