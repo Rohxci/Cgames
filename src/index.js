@@ -67,12 +67,19 @@ ephemeral: true
 
 if (interaction.isButton()) {
 
-if (interaction.customId === "ttt_accept") {
+if (interaction.customId.startsWith("ttt_accept")) {
 
-const challenger = interaction.message.embeds[0].description.match(/<@(\d+)>/)[1];
+const parts = interaction.customId.split("_");
 
-const player1 = challenger;
-const player2 = interaction.user.id;
+const challenger = parts[2];
+const opponent = parts[3];
+
+if (interaction.user.id !== opponent) {
+return interaction.reply({
+content: "Only the challenged player can accept.",
+ephemeral: true
+});
+}
 
 const board = [
 ["⬜","⬜","⬜"],
@@ -81,15 +88,15 @@ const board = [
 ];
 
 games.create(interaction.channelId,{
-player1,
-player2,
-turn:player1,
+player1: challenger,
+player2: opponent,
+turn: challenger,
 board
 });
 
 const embed = createEmbed(
 "🎮 TicTacToe",
-`<@${player1}> vs <@${player2}>\n\nTurn: <@${player1}>`
+`<@${challenger}> vs <@${opponent}>\n\nTurn: <@${challenger}>`
 );
 
 const rows = board.map((row,i)=>
@@ -110,7 +117,18 @@ components:rows
 
 }
 
-if (interaction.customId === "ttt_decline") {
+if (interaction.customId.startsWith("ttt_decline")) {
+
+const parts = interaction.customId.split("_");
+
+const opponent = parts[3];
+
+if (interaction.user.id !== opponent) {
+return interaction.reply({
+content: "Only the challenged player can decline.",
+ephemeral: true
+});
+}
 
 await interaction.update({
 embeds:[createEmbed("❌ Challenge Declined","The challenge was declined.")],
