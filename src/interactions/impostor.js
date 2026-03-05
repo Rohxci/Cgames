@@ -5,700 +5,409 @@ const {
 ActionRowBuilder,
 ButtonBuilder,
 ButtonStyle,
-StringSelectMenuBuilder,
-ModalBuilder,
-TextInputBuilder,
-TextInputStyle
+StringSelectMenuBuilder
 } = require("discord.js");
 
 const createEmbed = require("../utils/embed");
 const games = require("../systems/games");
 
 const MAX_PLAYERS = 10;
-const MIN_PLAYERS = 2;   // ✅ min 3 come vuoi tu
-const ROUNDS = 2;
+const MIN_PLAYERS = 3;
 
 const WORDS_PATH = path.join(__dirname, "..", "data", "impostor_words.json");
 
-function pickRandom(arr) {
-return arr[Math.floor(Math.random() * arr.length)];
+function pickRandom(arr){
+return arr[Math.floor(Math.random()*arr.length)];
 }
 
-function loadWords() {
-const raw = fs.readFileSync(WORDS_PATH, "utf8");
+function loadWords(){
+const raw = fs.readFileSync(WORDS_PATH,"utf8");
 return JSON.parse(raw);
 }
 
-function pickWord() {
+function pickWord(){
 const words = loadWords();
 const categories = Object.keys(words);
 const category = pickRandom(categories);
 const word = pickRandom(words[category]);
-return { category, word };
+return {category,word};
 }
 
-function uniq(arr) {
-return Array.from(new Set(arr));
-}
-
-async function getDisplayName(guild, userId) {
-try {
-const member = await guild.members.fetch(userId);
-return member.displayName || member.user.username || userId;
-} catch {
-return userId;
-}
-}
-
-function lobbyEmbed(state) {
-const playersText = state.players.map((id, i) => `${i + 1}. <@${id}>`).join("\n") || "—";
+function lobbyEmbed(state){
+const players = state.players.map(p=>`• <@${p}>`).join("\n") || "—";
 
 return createEmbed(
 "🎭 Impostor Lobby",
 [
-`**Players:** ${state.players.length}/${MAX_PLAYERS}`,
-`**Host:** <@${state.hostId}>`,
+`Players: ${state.players.length}/${MAX_PLAYERS}`,
+`Host: <@${state.hostId}>`,
 "",
-"**Rules**",
-"• **1 Impostor** is chosen at random.",
-"• Crew gets the **secret word** (via **ephemeral** when clicking **Reveal Role**).",
-"• Impostor gets **only the category** (via **ephemeral**).",
-"• **2 Rounds** of questions (guided turns).",
-"• No direct questions like: **“What is the word?”**",
-"• Then: **Vote** (one vote each).",
-"• If you vote the Impostor → **Crew wins**. Otherwise → **Impostor wins**.",
+"Rules",
+"• 1 impostor",
+"• Crew receives the secret word",
+"• Impostor only sees the category",
+"• Discuss freely in chat",
+"• Vote to find the impostor",
 "",
-"**Players**",
-playersText
+players
 ].join("\n")
 );
 }
 
-function lobbyComponents() {
-return [
+function lobbyButtons(){
+return[
 new ActionRowBuilder().addComponents(
-new ButtonBuilder().setCustomId("imp_join").setLabel("Join").setStyle(ButtonStyle.Success),
-new ButtonBuilder().setCustomId("imp_leave").setLabel("Leave").setStyle(ButtonStyle.Secondary),
-new ButtonBuilder().setCustomId("imp_start").setLabel("Start Game").setStyle(ButtonStyle.Primary),
-new ButtonBuilder().setCustomId("imp_cancel").setLabel("Cancel").setStyle(ButtonStyle.Danger)
+
+new ButtonBuilder()
+.setCustomId("imp_join")
+.setLabel("Join")
+.setStyle(ButtonStyle.Success),
+
+new ButtonBuilder()
+.setCustomId("imp_leave")
+.setLabel("Leave")
+.setStyle(ButtonStyle.Secondary),
+
+new ButtonBuilder()
+.setCustomId("imp_start")
+.setLabel("Start Game")
+.setStyle(ButtonStyle.Primary),
+
+new ButtonBuilder()
+.setCustomId("imp_cancel")
+.setLabel("Cancel")
+.setStyle(ButtonStyle.Danger)
+
 )
 ];
 }
 
-function rolesEmbed(state) {
-return createEmbed(
-"🎭 Impostor — Roles",
-[
-`**Category:** ${state.category}`,
-"",
-"Everyone must click **Reveal Role** to receive their role as an **ephemeral** message.",
-`Revealed: **${state.revealed.length}/${state.players.length}**`,
-"",
-"Host can start rounds when everyone revealed."
-].join("\n")
-);
-}
-
-function rolesComponents(state) {
-const allRevealed = state.revealed.length === state.players.length;
-
-return [
+function revealButtons(){
+return[
 new ActionRowBuilder().addComponents(
-new ButtonBuilder().setCustomId("imp_reveal").setLabel("Reveal Role").setStyle(ButtonStyle.Success),
-new ButtonBuilder().setCustomId("imp_begin_rounds").setLabel("Start Rounds").setStyle(ButtonStyle.Primary).setDisabled(!allRevealed),
-new ButtonBuilder().setCustomId("imp_cancel").setLabel("Cancel").setStyle(ButtonStyle.Danger)
+
+new ButtonBuilder()
+.setCustomId("imp_reveal")
+.setLabel("Reveal Role")
+.setStyle(ButtonStyle.Success)
+
 )
 ];
 }
 
-function discussionEmbed(state) {
-const asker = state.players[state.turnIndex];
-const target = state.players[(state.turnIndex + 1) % state.players.length];
+function durationVote(state){
 
-return createEmbed(
-"🎭 Impostor — Discussion",
-[
-`**Round:** ${state.round}/${ROUNDS}`,
-`**Category:** ${state.category}`,
-"",
-`**Asker:** <@${asker}>`,
-`**Target:** <@${target}>`,
-"",
-"Use the buttons below to submit **Ask** and **Answer**.",
-"✅ Question & Answer will be posted **publicly** by the bot."
-].join("\n")
-);
-}
-
-function discussionComponents() {
-return [
-new ActionRowBuilder().addComponents(
-new ButtonBuilder().setCustomId("imp_ask").setLabel("Ask").setStyle(ButtonStyle.Primary),
-new ButtonBuilder().setCustomId("imp_answer").setLabel("Answer").setStyle(ButtonStyle.Success),
-new ButtonBuilder().setCustomId("imp_skip_turn").setLabel("Skip Turn").setStyle(ButtonStyle.Secondary),
-new ButtonBuilder().setCustomId("imp_force_vote").setLabel("Go to Vote").setStyle(ButtonStyle.Danger)
-)
+const options=[
+{label:"30 seconds",value:"30"},
+{label:"60 seconds",value:"60"},
+{label:"90 seconds",value:"90"},
+{label:"120 seconds",value:"120"}
 ];
-}
-
-function voteEmbed(state) {
-return createEmbed(
-"🗳 Impostor — Voting",
-[
-`**Category:** ${state.category}`,
-"",
-"Select who you think is the **Impostor**.",
-"One vote each.",
-"",
-`Votes submitted: **${Object.keys(state.votes).length}/${state.players.length}**`
-].join("\n")
-);
-}
-
-async function voteComponents(interaction, state, disabled=false) {
-const guild = interaction.guild;
-
-const options = [];
-for (const id of state.players) {
-const name = guild ? await getDisplayName(guild, id) : id;
-
-options.push({
-label: name.slice(0, 100),
-description: `Vote ${name}`.slice(0, 100),
-value: id
-});
-}
 
 const menu = new StringSelectMenuBuilder()
-.setCustomId("imp_vote_select")
-.setPlaceholder("Select the impostor...")
-.addOptions(options)
-.setDisabled(disabled);
+.setCustomId("imp_time_vote")
+.setPlaceholder("Select discussion time")
+.addOptions(options);
 
-return [
-new ActionRowBuilder().addComponents(menu),
-new ActionRowBuilder().addComponents(
-new ButtonBuilder().setCustomId("imp_finish_vote").setLabel("Finish Vote (Host)").setStyle(ButtonStyle.Primary).setDisabled(disabled),
-new ButtonBuilder().setCustomId("imp_cancel").setLabel("Cancel").setStyle(ButtonStyle.Danger).setDisabled(disabled)
-)
+return[
+new ActionRowBuilder().addComponents(menu)
 ];
 }
 
-function resultsEmbed(state, votedOutId, crewWin) {
-return createEmbed(
-"🎭 Impostor — Results",
-[
-`**Category:** ${state.category}`,
-`**Secret word:** ${state.word}`,
-"",
-`**Impostor:** <@${state.impostorId}>`,
-`**Most voted:** <@${votedOutId}>`,
-"",
-crewWin ? "✅ **Crew wins!**" : "😈 **Impostor wins!**"
-].join("\n")
-);
+async function voteMenu(interaction,state){
+
+const options=[];
+
+for(const id of state.players){
+
+const member = await interaction.guild.members.fetch(id).catch(()=>null);
+const name = member ? member.displayName : id;
+
+options.push({
+label:name.slice(0,100),
+value:id
+});
+
 }
 
-function onlyHost(interaction, state) {
-if (interaction.user.id !== state.hostId) {
-interaction.reply({ content: "Only the host can do this.", ephemeral: true });
-return false;
-}
-return true;
+const menu=new StringSelectMenuBuilder()
+.setCustomId("imp_vote")
+.setPlaceholder("Vote the impostor")
+.addOptions(options);
+
+return[
+new ActionRowBuilder().addComponents(menu)
+];
 }
 
-function onlyPlayer(interaction, state) {
-if (!state.players.includes(interaction.user.id)) {
-interaction.reply({ content: "You are not in this game.", ephemeral: true });
-return false;
-}
-return true;
-}
+module.exports={
 
-function countVotes(votes) {
-const counts = {};
-for (const voterId of Object.keys(votes)) {
-const votedId = votes[voterId];
-counts[votedId] = (counts[votedId] || 0) + 1;
-}
+match(interaction){
 
-let max = -1;
-let top = [];
-for (const id of Object.keys(counts)) {
-if (counts[id] > max) {
-max = counts[id];
-top = [id];
-} else if (counts[id] === max) {
-top.push(id);
-}
-}
+return interaction.customId?.startsWith("imp_");
 
-return top.length ? pickRandom(top) : null;
-}
-
-function advanceTurn(state) {
-state.turnIndex++;
-if (state.turnIndex >= state.players.length) {
-state.turnIndex = 0;
-state.round++;
-}
-}
-
-async function trackMessage(state, msg) {
-if (!msg) return;
-state.trackedMessageIds = state.trackedMessageIds || [];
-state.trackedMessageIds.push(msg.id);
-}
-
-async function cleanupGameMessages(interaction, state) {
-const channel = interaction.channel;
-
-const ids = (state.trackedMessageIds || []).slice();
-const mainId = state.mainMessageId;
-
-if (mainId) ids.push(mainId);
-
-for (const id of ids) {
-try {
-const m = await channel.messages.fetch(id);
-await m.delete().catch(()=>{});
-} catch {}
-}
-}
-
-module.exports = {
-
-match(interaction) {
-const id = interaction.customId;
-return typeof id === "string" && (
-id.startsWith("imp_") ||
-id === "imp_vote_select" ||
-id.startsWith("imp_modal_")
-);
 },
 
-async run(interaction) {
+async run(interaction){
 
 const state = games.get(interaction.channelId);
-if (!state || state.type !== "impostor") {
-return interaction.reply({ content: "No Impostor game found in this channel.", ephemeral: true });
-}
+if(!state)return;
 
 const id = interaction.customId;
 
-/* Ensure we store the main message id (the one with buttons) */
-if (interaction.message && !state.mainMessageId) {
-state.mainMessageId = interaction.message.id;
-}
-state.trackedMessageIds = state.trackedMessageIds || [];
+/* JOIN */
 
-/* LOBBY: JOIN */
-if (id === "imp_join") {
+if(id==="imp_join"){
 
-if (state.phase !== "lobby") {
-return interaction.reply({ content: "Game already started.", ephemeral: true });
-}
+if(state.players.length>=MAX_PLAYERS)
+return interaction.reply({content:"Lobby full",ephemeral:true});
 
-if (state.players.length >= MAX_PLAYERS) {
-return interaction.reply({ content: "Lobby is full.", ephemeral: true });
-}
-
-state.players = uniq([...state.players, interaction.user.id]);
+if(!state.players.includes(interaction.user.id))
+state.players.push(interaction.user.id);
 
 await interaction.update({
-embeds: [lobbyEmbed(state)],
-components: lobbyComponents()
+embeds:[lobbyEmbed(state)],
+components:lobbyButtons()
 });
 
 return;
 }
 
-/* LOBBY: LEAVE */
-if (id === "imp_leave") {
+/* LEAVE */
 
-if (state.phase !== "lobby") {
-return interaction.reply({ content: "You cannot leave after the game started.", ephemeral: true });
-}
+if(id==="imp_leave"){
 
-if (!state.players.includes(interaction.user.id)) {
-return interaction.reply({ content: "You are not in the lobby.", ephemeral: true });
-}
-
-state.players = state.players.filter(x => x !== interaction.user.id);
-
-if (state.players.length === 0) {
-games.delete(interaction.channelId);
-return interaction.update({
-embeds:[createEmbed("🎭 Impostor","Lobby closed (no players left).")],
-components:[]
-});
-}
-
-/* If host leaves, transfer host */
-if (interaction.user.id === state.hostId) {
-state.hostId = state.players[0];
-}
+state.players=state.players.filter(p=>p!==interaction.user.id);
 
 await interaction.update({
-embeds: [lobbyEmbed(state)],
-components: lobbyComponents()
+embeds:[lobbyEmbed(state)],
+components:lobbyButtons()
 });
 
 return;
 }
 
 /* CANCEL */
-if (id === "imp_cancel") {
 
-if (!onlyHost(interaction, state)) return;
+if(id==="imp_cancel"){
 
-await interaction.deferUpdate().catch(()=>{});
+games.delete(interaction.channelId);
 
-await cleanupGameMessages(interaction, state);
+await interaction.update({
+embeds:[createEmbed("🎭 Game cancelled","")],
+components:[]
+});
+
+return;
+}
+
+/* START */
+
+if(id==="imp_start"){
+
+if(state.players.length<MIN_PLAYERS)
+return interaction.reply({content:"Need at least 3 players",ephemeral:true});
+
+const {category,word}=pickWord();
+
+state.category=category;
+state.word=word;
+state.impostorId=pickRandom(state.players);
+
+await interaction.update({
+
+embeds:[createEmbed(
+"🎭 Roles",
+`Category: **${category}**
+
+Everyone click **Reveal Role**`
+)],
+
+components:revealButtons()
+
+});
+
+return;
+}
+
+/* REVEAL */
+
+if(id==="imp_reveal"){
+
+if(interaction.user.id===state.impostorId){
+
+await interaction.reply({
+embeds:[createEmbed("🎭 Your Role",`You are the **IMPOSTOR**
+
+Category: ${state.category}`)],
+ephemeral:true
+});
+
+}else{
+
+await interaction.reply({
+embeds:[createEmbed("🎭 Your Role",`You are **CREW**
+
+Category: ${state.category}
+Word: **${state.word}**`)],
+ephemeral:true
+});
+
+}
+
+state.revealed=(state.revealed||0)+1;
+
+if(state.revealed===state.players.length){
+
+await interaction.message.edit({
+
+embeds:[createEmbed(
+"⏳ Vote discussion time",
+"Players vote how long the discussion lasts"
+)],
+
+components:durationVote(state)
+
+});
+
+}
+
+return;
+}
+
+/* TIME VOTE */
+
+if(interaction.isStringSelectMenu() && id==="imp_time_vote"){
+
+state.timeVotes=state.timeVotes||{};
+state.timeVotes[interaction.user.id]=parseInt(interaction.values[0]);
+
+await interaction.reply({content:"Vote submitted",ephemeral:true});
+
+if(Object.keys(state.timeVotes).length===state.players.length){
+
+const counts={};
+
+Object.values(state.timeVotes).forEach(v=>{
+counts[v]=(counts[v]||0)+1;
+});
+
+let max=0;
+let selected=60;
+
+for(const t in counts){
+
+if(counts[t]>max){
+max=counts[t];
+selected=parseInt(t);
+}
+
+}
+
+state.duration=selected;
+
+await interaction.message.edit({
+
+embeds:[createEmbed(
+"🎭 Discussion started",
+`Category: **${state.category}**
+
+Time: **${selected} seconds**
+
+Discuss in chat to find the impostor.`
+)],
+
+components:[
+new ActionRowBuilder().addComponents(
+
+new ButtonBuilder()
+.setCustomId("imp_end")
+.setLabel("End Discussion")
+.setStyle(ButtonStyle.Danger)
+
+)
+]
+
+});
+
+setTimeout(async()=>{
+
+if(!games.get(interaction.channelId))return;
+
+const voteComponents=await voteMenu(interaction,state);
+
+await interaction.channel.send({
+embeds:[createEmbed("🗳 Voting started","Vote the impostor")],
+components:voteComponents
+});
+
+},selected*1000);
+
+}
+
+return;
+}
+
+/* END DISCUSSION */
+
+if(id==="imp_end"){
+
+const voteComponents=await voteMenu(interaction,state);
+
+await interaction.channel.send({
+embeds:[createEmbed("🗳 Voting started","Vote the impostor")],
+components:voteComponents
+});
+
+return;
+}
+
+/* VOTE */
+
+if(interaction.isStringSelectMenu() && id==="imp_vote"){
+
+state.votes=state.votes||{};
+state.votes[interaction.user.id]=interaction.values[0];
+
+await interaction.reply({content:"Vote registered",ephemeral:true});
+
+if(Object.keys(state.votes).length===state.players.length){
+
+const counts={};
+
+Object.values(state.votes).forEach(v=>{
+counts[v]=(counts[v]||0)+1;
+});
+
+let max=0;
+let voted=null;
+
+for(const k in counts){
+if(counts[k]>max){
+max=counts[k];
+voted=k;
+}
+}
+
+const crewWin=voted===state.impostorId;
 
 games.delete(interaction.channelId);
 
 await interaction.channel.send({
-embeds:[createEmbed("🎭 Impostor","Game cancelled by host.")]
-}).catch(()=>{});
 
-return;
-}
+embeds:[createEmbed(
+"🎭 Results",
+`Word: **${state.word}**
 
-/* START GAME */
-if (id === "imp_start") {
+Impostor: <@${state.impostorId}>
 
-if (!onlyHost(interaction, state)) return;
+${crewWin?"✅ Crew wins":"😈 Impostor wins"}`
+)]
 
-if (state.phase !== "lobby") {
-return interaction.reply({ content: "Game already started.", ephemeral: true });
-}
-
-if (state.players.length < MIN_PLAYERS) {
-return interaction.reply({ content: `Need at least ${MIN_PLAYERS} players to start.`, ephemeral: true });
-}
-
-const picked = pickWord();
-state.category = picked.category;
-state.word = picked.word;
-
-state.impostorId = pickRandom(state.players);
-
-state.revealed = [];
-state.phase = "roles";
-state.round = 1;
-state.turnIndex = 0;
-state.votes = {};
-state.qa = { question: null, answer: null };
-
-await interaction.update({
-embeds: [rolesEmbed(state)],
-components: rolesComponents(state)
 });
 
-return;
 }
 
-/* REVEAL ROLE (ephemeral reply) */
-if (id === "imp_reveal") {
-
-if (state.phase !== "roles") {
-return interaction.reply({ content: "Roles are not available right now.", ephemeral: true });
-}
-
-if (!onlyPlayer(interaction, state)) return;
-
-if (!state.revealed.includes(interaction.user.id)) {
-state.revealed.push(interaction.user.id);
-}
-
-if (interaction.user.id === state.impostorId) {
-await interaction.reply({
-embeds: [createEmbed("🎭 Your Role", `You are the **IMPOSTOR**.\n\n**Category:** ${state.category}\n\nBlend in and avoid suspicion.`)],
-ephemeral: true
-});
-} else {
-await interaction.reply({
-embeds: [createEmbed("🎭 Your Role", `You are **CREW**.\n\n**Category:** ${state.category}\n**Secret word:** **${state.word}**\n\nDo not say the word directly.`)],
-ephemeral: true
-});
-}
-
-await interaction.message.edit({
-embeds: [rolesEmbed(state)],
-components: rolesComponents(state)
-});
-
-return;
-}
-
-/* BEGIN ROUNDS */
-if (id === "imp_begin_rounds") {
-
-if (!onlyHost(interaction, state)) return;
-
-if (state.phase !== "roles") {
-return interaction.reply({ content: "Not in role phase.", ephemeral: true });
-}
-
-if (state.revealed.length !== state.players.length) {
-return interaction.reply({ content: "Wait until everyone clicked **Reveal Role**.", ephemeral: true });
-}
-
-state.phase = "rounds";
-state.round = 1;
-state.turnIndex = 0;
-state.qa = { question: null, answer: null };
-
-await interaction.update({
-embeds: [discussionEmbed(state)],
-components: discussionComponents()
-});
-
-return;
-}
-
-/* ASK -> Modal */
-if (id === "imp_ask") {
-
-if (state.phase !== "rounds") {
-return interaction.reply({ content: "Not in discussion phase.", ephemeral: true });
-}
-
-if (!onlyPlayer(interaction, state)) return;
-
-const asker = state.players[state.turnIndex];
-if (interaction.user.id !== asker) {
-return interaction.reply({ content: "Only the current **Asker** can submit the question.", ephemeral: true });
-}
-
-const modal = new ModalBuilder()
-.setCustomId("imp_modal_ask")
-.setTitle("Impostor — Ask");
-
-const input = new TextInputBuilder()
-.setCustomId("imp_q")
-.setLabel("Your question")
-.setStyle(TextInputStyle.Paragraph)
-.setRequired(true)
-.setMaxLength(150);
-
-modal.addComponents(new ActionRowBuilder().addComponents(input));
-
-return interaction.showModal(modal);
-}
-
-/* ANSWER -> Modal */
-if (id === "imp_answer") {
-
-if (state.phase !== "rounds") {
-return interaction.reply({ content: "Not in discussion phase.", ephemeral: true });
-}
-
-if (!onlyPlayer(interaction, state)) return;
-
-const target = state.players[(state.turnIndex + 1) % state.players.length];
-if (interaction.user.id !== target) {
-return interaction.reply({ content: "Only the current **Target** can submit the answer.", ephemeral: true });
-}
-
-const modal = new ModalBuilder()
-.setCustomId("imp_modal_answer")
-.setTitle("Impostor — Answer");
-
-const input = new TextInputBuilder()
-.setCustomId("imp_a")
-.setLabel("Your answer")
-.setStyle(TextInputStyle.Paragraph)
-.setRequired(true)
-.setMaxLength(150);
-
-modal.addComponents(new ActionRowBuilder().addComponents(input));
-
-return interaction.showModal(modal);
-}
-
-/* MODAL SUBMIT: ASK (PUBLIC MESSAGE) */
-if (interaction.isModalSubmit() && id === "imp_modal_ask") {
-
-if (!onlyPlayer(interaction, state)) return;
-
-const asker = state.players[state.turnIndex];
-const target = state.players[(state.turnIndex + 1) % state.players.length];
-
-if (interaction.user.id !== asker) {
-return interaction.reply({ content: "You are not the current Asker.", ephemeral: true });
-}
-
-const q = interaction.fields.getTextInputValue("imp_q");
-state.qa.question = q;
-
-await interaction.reply({ content: "Question posted.", ephemeral: true });
-
-const msg = await interaction.channel.send({
-embeds: [createEmbed("❓ Question", `From <@${asker}> to <@${target}>:\n\n${q}`)]
-}).catch(()=>null);
-
-await trackMessage(state, msg);
-
-await interaction.message.edit({
-embeds: [discussionEmbed(state)],
-components: discussionComponents()
-});
-
-return;
-}
-
-/* MODAL SUBMIT: ANSWER (PUBLIC MESSAGE) */
-if (interaction.isModalSubmit() && id === "imp_modal_answer") {
-
-if (!onlyPlayer(interaction, state)) return;
-
-const asker = state.players[state.turnIndex];
-const target = state.players[(state.turnIndex + 1) % state.players.length];
-
-if (interaction.user.id !== target) {
-return interaction.reply({ content: "You are not the current Target.", ephemeral: true });
-}
-
-const a = interaction.fields.getTextInputValue("imp_a");
-state.qa.answer = a;
-
-await interaction.reply({ content: "Answer posted.", ephemeral: true });
-
-const msg = await interaction.channel.send({
-embeds: [createEmbed("💬 Answer", `From <@${target}>:\n\n${a}`)]
-}).catch(()=>null);
-
-await trackMessage(state, msg);
-
-/* advance */
-advanceTurn(state);
-state.qa = { question: null, answer: null };
-
-if (state.round > ROUNDS) {
-state.phase = "voting";
-state.votes = {};
-
-await interaction.message.edit({
-embeds: [voteEmbed(state)],
-components: await voteComponents(interaction, state, false)
-});
-
-return;
-}
-
-await interaction.message.edit({
-embeds: [discussionEmbed(state)],
-components: discussionComponents()
-});
-
-return;
-}
-
-/* SKIP TURN (host) */
-if (id === "imp_skip_turn") {
-
-if (!onlyHost(interaction, state)) return;
-
-if (state.phase !== "rounds") {
-return interaction.reply({ content: "Not in discussion phase.", ephemeral: true });
-}
-
-advanceTurn(state);
-state.qa = { question: null, answer: null };
-
-if (state.round > ROUNDS) {
-state.phase = "voting";
-state.votes = {};
-
-await interaction.update({
-embeds: [voteEmbed(state)],
-components: await voteComponents(interaction, state, false)
-});
-
-return;
-}
-
-await interaction.update({
-embeds: [discussionEmbed(state)],
-components: discussionComponents()
-});
-
-return;
-}
-
-/* FORCE VOTE (host) */
-if (id === "imp_force_vote") {
-
-if (!onlyHost(interaction, state)) return;
-
-state.phase = "voting";
-state.votes = {};
-
-await interaction.update({
-embeds: [voteEmbed(state)],
-components: await voteComponents(interaction, state, false)
-});
-
-return;
-}
-
-/* VOTE SELECT (NOW SHOWS REAL NAMES) */
-if (interaction.isStringSelectMenu() && id === "imp_vote_select") {
-
-if (state.phase !== "voting") {
-return interaction.reply({ content: "Voting is not active.", ephemeral: true });
-}
-
-if (!onlyPlayer(interaction, state)) return;
-
-if (state.votes[interaction.user.id]) {
-return interaction.reply({ content: "You already voted.", ephemeral: true });
-}
-
-const votedId = interaction.values[0];
-state.votes[interaction.user.id] = votedId;
-
-await interaction.reply({
-embeds: [createEmbed("🗳 Vote submitted", `You voted: <@${votedId}>`)],
-ephemeral: true
-});
-
-await interaction.message.edit({
-embeds: [voteEmbed(state)],
-components: await voteComponents(interaction, state, false)
-});
-
-return;
-}
-
-/* FINISH VOTE (host) + CLEANUP */
-if (id === "imp_finish_vote") {
-
-if (!onlyHost(interaction, state)) return;
-
-if (state.phase !== "voting") {
-return interaction.reply({ content: "Not in voting phase.", ephemeral: true });
-}
-
-await interaction.deferUpdate().catch(()=>{});
-
-const votedOutId = countVotes(state.votes) || state.players[0];
-const crewWin = votedOutId === state.impostorId;
-
-/* delete game messages (best effort) */
-await cleanupGameMessages(interaction, state);
-
-/* end state */
-games.delete(interaction.channelId);
-
-/* only final message remains */
-await interaction.channel.send({
-embeds: [resultsEmbed(state, votedOutId, crewWin)]
-}).catch(()=>{});
-
-return;
 }
 
 }
