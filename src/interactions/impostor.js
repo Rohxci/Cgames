@@ -15,7 +15,7 @@ const createEmbed = require("../utils/embed");
 const games = require("../systems/games");
 
 const MAX_PLAYERS = 10;
-const MIN_PLAYERS = 2;
+const MIN_PLAYERS = 3;   // ✅ min 3 come vuoi tu
 const ROUNDS = 2;
 
 const WORDS_PATH = path.join(__dirname, "..", "data", "impostor_words.json");
@@ -39,6 +39,15 @@ return { category, word };
 
 function uniq(arr) {
 return Array.from(new Set(arr));
+}
+
+async function getDisplayName(guild, userId) {
+try {
+const member = await guild.members.fetch(userId);
+return member.displayName || member.user.username || userId;
+} catch {
+return userId;
+}
 }
 
 function lobbyEmbed(state) {
@@ -115,14 +124,8 @@ return createEmbed(
 `**Asker:** <@${asker}>`,
 `**Target:** <@${target}>`,
 "",
-`**Question:** ${state.qa.question || "—"}`,
-`**Answer:** ${state.qa.answer || "—"}`,
-"",
-"Buttons:",
-"• Asker clicks **Ask** (modal)",
-"• Target clicks **Answer** (modal)",
-"• Host can **Skip Turn**",
-"• Or go to **Vote**"
+"Use the buttons below to submit **Ask** and **Answer**.",
+"✅ Question & Answer will be posted **publicly** by the bot."
 ].join("\n")
 );
 }
@@ -152,18 +155,24 @@ return createEmbed(
 );
 }
 
-function voteComponents(state, disabled=false) {
+async function voteComponents(interaction, state, disabled=false) {
+const guild = interaction.guild;
 
-const options = state.players.map(id => ({
-label: `Player`,
-description: `Vote <@${id}>`,
+const options = [];
+for (const id of state.players) {
+const name = guild ? await getDisplayName(guild, id) : id;
+
+options.push({
+label: name.slice(0, 100),
+description: `Vote ${name}`.slice(0, 100),
 value: id
-}));
+});
+}
 
 const menu = new StringSelectMenuBuilder()
 .setCustomId("imp_vote_select")
 .setPlaceholder("Select the impostor...")
-.addOptions(options.slice(0, 25))
+.addOptions(options)
 .setDisabled(disabled);
 
 return [
@@ -228,8 +237,6 @@ return top.length ? pickRandom(top) : null;
 }
 
 function advanceTurn(state) {
-state.qa = { question: null, answer: null };
-
 state.turnIndex++;
 if (state.turnIndex >= state.players.length) {
 state.turnIndex = 0;
@@ -237,11 +244,37 @@ state.round++;
 }
 }
 
+async function trackMessage(state, msg) {
+if (!msg) return;
+state.trackedMessageIds = state.trackedMessageIds || [];
+state.trackedMessageIds.push(msg.id);
+}
+
+async function cleanupGameMessages(interaction, state) {
+const channel = interaction.channel;
+
+const ids = (state.trackedMessageIds || []).slice();
+const mainId = state.mainMessageId;
+
+if (mainId) ids.push(mainId);
+
+for (const id of ids) {
+try {
+const m = await channel.messages.fetch(id);
+await m.delete().catch(()=>{});
+} catch {}
+}
+}
+
 module.exports = {
 
 match(interaction) {
 const id = interaction.customId;
-return typeof id === "string" && (id.startsWith("imp_") || id === "imp_vote_select" || id.startsWith("imp_modal_"));
+return typeof id === "string" && (
+id.startsWith("imp_") ||
+id === "imp_vote_select" ||
+id.startsWith("imp_modal_")
+);
 },
 
 async run(interaction) {
@@ -252,6 +285,12 @@ return interaction.reply({ content: "No Impostor game found in this channel.", e
 }
 
 const id = interaction.customId;
+
+/* Ensure we store the main message id (the one with buttons) */
+if (interaction.message && !state.mainMessageId) {
+state.mainMessageId = interaction.message.id;
+}
+state.trackedMessageIds = state.trackedMessageIds || [];
 
 /* LOBBY: JOIN */
 if (id === "imp_join") {
@@ -313,12 +352,15 @@ if (id === "imp_cancel") {
 
 if (!onlyHost(interaction, state)) return;
 
+await interaction.deferUpdate().catch(()=>{});
+
+await cleanupGameMessages(interaction, state);
+
 games.delete(interaction.channelId);
 
-await interaction.update({
-embeds:[createEmbed("🎭 Impostor","Game cancelled by host.")],
-components:[]
-});
+await interaction.channel.send({
+embeds:[createEmbed("🎭 Impostor","Game cancelled by host.")]
+}).catch(()=>{});
 
 return;
 }
@@ -346,8 +388,8 @@ state.revealed = [];
 state.phase = "roles";
 state.round = 1;
 state.turnIndex = 0;
-state.qa = { question: null, answer: null };
 state.votes = {};
+state.qa = { question: null, answer: null };
 
 await interaction.update({
 embeds: [rolesEmbed(state)],
@@ -370,24 +412,18 @@ if (!state.revealed.includes(interaction.user.id)) {
 state.revealed.push(interaction.user.id);
 }
 
-/* send ephemeral role message */
 if (interaction.user.id === state.impostorId) {
-
 await interaction.reply({
 embeds: [createEmbed("🎭 Your Role", `You are the **IMPOSTOR**.\n\n**Category:** ${state.category}\n\nBlend in and avoid suspicion.`)],
 ephemeral: true
 });
-
 } else {
-
 await interaction.reply({
 embeds: [createEmbed("🎭 Your Role", `You are **CREW**.\n\n**Category:** ${state.category}\n**Secret word:** **${state.word}**\n\nDo not say the word directly.`)],
 ephemeral: true
 });
-
 }
 
-/* update the main message */
 await interaction.message.edit({
 embeds: [rolesEmbed(state)],
 components: rolesComponents(state)
@@ -482,12 +518,14 @@ modal.addComponents(new ActionRowBuilder().addComponents(input));
 return interaction.showModal(modal);
 }
 
-/* MODAL SUBMIT: ASK */
+/* MODAL SUBMIT: ASK (PUBLIC MESSAGE) */
 if (interaction.isModalSubmit() && id === "imp_modal_ask") {
 
 if (!onlyPlayer(interaction, state)) return;
 
 const asker = state.players[state.turnIndex];
+const target = state.players[(state.turnIndex + 1) % state.players.length];
+
 if (interaction.user.id !== asker) {
 return interaction.reply({ content: "You are not the current Asker.", ephemeral: true });
 }
@@ -495,7 +533,13 @@ return interaction.reply({ content: "You are not the current Asker.", ephemeral:
 const q = interaction.fields.getTextInputValue("imp_q");
 state.qa.question = q;
 
-await interaction.reply({ embeds:[createEmbed("✅ Question submitted", q)], ephemeral:true });
+await interaction.reply({ content: "Question posted.", ephemeral: true });
+
+const msg = await interaction.channel.send({
+embeds: [createEmbed("❓ Question", `From <@${asker}> to <@${target}>:\n\n${q}`)]
+}).catch(()=>null);
+
+await trackMessage(state, msg);
 
 await interaction.message.edit({
 embeds: [discussionEmbed(state)],
@@ -505,12 +549,14 @@ components: discussionComponents()
 return;
 }
 
-/* MODAL SUBMIT: ANSWER */
+/* MODAL SUBMIT: ANSWER (PUBLIC MESSAGE) */
 if (interaction.isModalSubmit() && id === "imp_modal_answer") {
 
 if (!onlyPlayer(interaction, state)) return;
 
+const asker = state.players[state.turnIndex];
 const target = state.players[(state.turnIndex + 1) % state.players.length];
+
 if (interaction.user.id !== target) {
 return interaction.reply({ content: "You are not the current Target.", ephemeral: true });
 }
@@ -518,18 +564,27 @@ return interaction.reply({ content: "You are not the current Target.", ephemeral
 const a = interaction.fields.getTextInputValue("imp_a");
 state.qa.answer = a;
 
-await interaction.reply({ embeds:[createEmbed("✅ Answer submitted", a)], ephemeral:true });
+await interaction.reply({ content: "Answer posted.", ephemeral: true });
 
-/* After answer -> next turn */
+const msg = await interaction.channel.send({
+embeds: [createEmbed("💬 Answer", `From <@${target}>:\n\n${a}`)]
+}).catch(()=>null);
+
+await trackMessage(state, msg);
+
+/* advance */
 advanceTurn(state);
+state.qa = { question: null, answer: null };
 
 if (state.round > ROUNDS) {
 state.phase = "voting";
 state.votes = {};
+
 await interaction.message.edit({
 embeds: [voteEmbed(state)],
-components: voteComponents(state, false)
+components: await voteComponents(interaction, state, false)
 });
+
 return;
 }
 
@@ -551,14 +606,17 @@ return interaction.reply({ content: "Not in discussion phase.", ephemeral: true 
 }
 
 advanceTurn(state);
+state.qa = { question: null, answer: null };
 
 if (state.round > ROUNDS) {
 state.phase = "voting";
 state.votes = {};
+
 await interaction.update({
 embeds: [voteEmbed(state)],
-components: voteComponents(state, false)
+components: await voteComponents(interaction, state, false)
 });
+
 return;
 }
 
@@ -580,13 +638,13 @@ state.votes = {};
 
 await interaction.update({
 embeds: [voteEmbed(state)],
-components: voteComponents(state, false)
+components: await voteComponents(interaction, state, false)
 });
 
 return;
 }
 
-/* VOTE SELECT */
+/* VOTE SELECT (NOW SHOWS REAL NAMES) */
 if (interaction.isStringSelectMenu() && id === "imp_vote_select") {
 
 if (state.phase !== "voting") {
@@ -609,13 +667,13 @@ ephemeral: true
 
 await interaction.message.edit({
 embeds: [voteEmbed(state)],
-components: voteComponents(state, false)
+components: await voteComponents(interaction, state, false)
 });
 
 return;
 }
 
-/* FINISH VOTE (host) */
+/* FINISH VOTE (host) + CLEANUP */
 if (id === "imp_finish_vote") {
 
 if (!onlyHost(interaction, state)) return;
@@ -624,15 +682,21 @@ if (state.phase !== "voting") {
 return interaction.reply({ content: "Not in voting phase.", ephemeral: true });
 }
 
+await interaction.deferUpdate().catch(()=>{});
+
 const votedOutId = countVotes(state.votes) || state.players[0];
 const crewWin = votedOutId === state.impostorId;
 
+/* delete game messages (best effort) */
+await cleanupGameMessages(interaction, state);
+
+/* end state */
 games.delete(interaction.channelId);
 
-await interaction.update({
-embeds: [resultsEmbed(state, votedOutId, crewWin)],
-components: []
-});
+/* only final message remains */
+await interaction.channel.send({
+embeds: [resultsEmbed(state, votedOutId, crewWin)]
+}).catch(()=>{});
 
 return;
 }
