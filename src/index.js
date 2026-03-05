@@ -54,42 +54,65 @@ console.log(`Logged in as ${client.user.tag}`);
 
 client.on(Events.InteractionCreate, async interaction => {
 
+/* SLASH COMMANDS */
+
 if (interaction.isChatInputCommand()) {
 
 const command = client.commands.get(interaction.commandName);
 if (!command) return;
 
 try {
+
 await command.execute(interaction);
+
 } catch (error) {
+
 console.error(error);
 
 if (interaction.replied || interaction.deferred) {
-return interaction.followUp({ content: "There was an error executing this command.", ephemeral: true });
+return interaction.followUp({
+content: "There was an error executing this command.",
+ephemeral: true
+});
 }
 
-return interaction.reply({ content: "There was an error executing this command.", ephemeral: true });
+return interaction.reply({
+content: "There was an error executing this command.",
+ephemeral: true
+});
+
 }
 
 return;
 }
 
-if (interaction.isButton()) {
+/* COMPONENTS & MODALS */
+
+if (interaction.isButton() || interaction.isStringSelectMenu() || interaction.isModalSubmit()) {
 
 for (const handler of client.handlers) {
+
 try {
+
 if (handler.match(interaction)) {
 await handler.run(interaction);
 return;
 }
+
 } catch (error) {
+
 console.error(error);
 
 if (!interaction.replied && !interaction.deferred) {
-return interaction.reply({ content: "There was an error processing this interaction.", ephemeral: true });
+return interaction.reply({
+content: "There was an error processing this interaction.",
+ephemeral: true
+});
 }
+
 return;
 }
+
 }
 
 return;
