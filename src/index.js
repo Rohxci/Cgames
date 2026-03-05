@@ -24,15 +24,15 @@ client.commands = new Collection();
 
 /* LOAD COMMANDS */
 
-const commandsPath = path.join(__dirname, "commands");
+const commandsPath = path.join(__dirname,"commands");
 const commandFiles = fs.readdirSync(commandsPath).filter(file => file.endsWith(".js"));
 
 for (const file of commandFiles) {
 
-const filePath = path.join(commandsPath, file);
+const filePath = path.join(commandsPath,file);
 const command = require(filePath);
 
-client.commands.set(command.data.name, command);
+client.commands.set(command.data.name,command);
 
 }
 
@@ -43,6 +43,42 @@ client.once("ready", () => {
 console.log(`Logged in as ${client.user.tag}`);
 
 });
+
+/* WIN CHECK */
+
+function checkWin(board) {
+
+const lines = [
+
+[board[0][0],board[0][1],board[0][2]],
+[board[1][0],board[1][1],board[1][2]],
+[board[2][0],board[2][1],board[2][2]],
+
+[board[0][0],board[1][0],board[2][0]],
+[board[0][1],board[1][1],board[2][1]],
+[board[0][2],board[1][2],board[2][2]],
+
+[board[0][0],board[1][1],board[2][2]],
+[board[0][2],board[1][1],board[2][0]]
+
+];
+
+for (const line of lines) {
+
+if (line.every(cell => cell === "❌")) return "❌";
+if (line.every(cell => cell === "⭕")) return "⭕";
+
+}
+
+return null;
+
+}
+
+function checkDraw(board) {
+
+return board.flat().every(cell => cell !== "⬜");
+
+}
 
 /* INTERACTIONS */
 
@@ -62,21 +98,21 @@ await command.execute(interaction);
 console.error(error);
 
 await interaction.reply({
-content: "There was an error executing this command.",
-ephemeral: true
+content:"There was an error executing this command.",
+ephemeral:true
 });
 
 }
 
 }
 
-/* BUTTON SYSTEM */
+/* BUTTONS */
 
 if (interaction.isButton()) {
 
 const id = interaction.customId;
 
-/* ACCEPT CHALLENGE */
+/* ACCEPT */
 
 if (id.startsWith("ttt_accept_")) {
 
@@ -88,8 +124,8 @@ const opponent = parts[3];
 if (interaction.user.id !== opponent) {
 
 return interaction.reply({
-content: "Only the challenged player can accept.",
-ephemeral: true
+content:"Only the challenged player can accept.",
+ephemeral:true
 });
 
 }
@@ -101,9 +137,9 @@ const board = [
 ];
 
 games.create(interaction.channelId,{
-player1: challenger,
-player2: opponent,
-turn: challenger,
+player1:challenger,
+player2:opponent,
+turn:challenger,
 board
 });
 
@@ -130,19 +166,18 @@ components:rows
 
 }
 
-/* DECLINE CHALLENGE */
+/* DECLINE */
 
 if (id.startsWith("ttt_decline_")) {
 
 const parts = id.split("_");
-
 const opponent = parts[3];
 
 if (interaction.user.id !== opponent) {
 
 return interaction.reply({
-content: "Only the challenged player can decline.",
-ephemeral: true
+content:"Only the challenged player can decline.",
+ephemeral:true
 });
 
 }
@@ -185,9 +220,63 @@ const symbol = interaction.user.id === game.player1 ? "❌" : "⭕";
 
 game.board[row][col] = symbol;
 
-game.turn = interaction.user.id === game.player1 ? game.player2 : game.player1;
+/* CHECK WIN */
 
-/* UPDATE BOARD */
+const winner = checkWin(game.board);
+
+if (winner) {
+
+const winnerId = winner === "❌" ? game.player1 : game.player2;
+
+const rows = game.board.map((row,i)=>
+new ActionRowBuilder().addComponents(
+row.map((cell,j)=>
+new ButtonBuilder()
+.setCustomId(`ttt_${i}_${j}`)
+.setLabel(cell)
+.setStyle(ButtonStyle.Secondary)
+.setDisabled(true)
+)
+)
+);
+
+games.delete(interaction.channelId);
+
+return interaction.update({
+embeds:[createEmbed("🏆 TicTacToe",`Winner: <@${winnerId}> 🎉`)],
+components:rows
+});
+
+}
+
+/* CHECK DRAW */
+
+if (checkDraw(game.board)) {
+
+const rows = game.board.map((row,i)=>
+new ActionRowBuilder().addComponents(
+row.map((cell,j)=>
+new ButtonBuilder()
+.setCustomId(`ttt_${i}_${j}`)
+.setLabel(cell)
+.setStyle(ButtonStyle.Secondary)
+.setDisabled(true)
+)
+)
+);
+
+games.delete(interaction.channelId);
+
+return interaction.update({
+embeds:[createEmbed("🤝 TicTacToe","It's a draw!")],
+components:rows
+});
+
+}
+
+/* NEXT TURN */
+
+game.turn = interaction.user.id === game.player1 ? game.player2 : game.player1;
 
 const rows = game.board.map((row,i)=>
 new ActionRowBuilder().addComponents(
