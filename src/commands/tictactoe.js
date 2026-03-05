@@ -7,7 +7,6 @@ ButtonStyle
 
 const channelCheck = require("../utils/channelCheck");
 const createEmbed = require("../utils/embed");
-const games = require("../systems/games");
 
 module.exports = {
 
@@ -46,12 +45,12 @@ const embed = createEmbed(
 const row = new ActionRowBuilder().addComponents(
 
 new ButtonBuilder()
-.setCustomId("ttt_accept")
+.setCustomId(`ttt_accept_${interaction.user.id}_${opponent.id}`)
 .setLabel("Accept")
 .setStyle(ButtonStyle.Success),
 
 new ButtonBuilder()
-.setCustomId("ttt_decline")
+.setCustomId(`ttt_decline_${interaction.user.id}_${opponent.id}`)
 .setLabel("Decline")
 .setStyle(ButtonStyle.Danger)
 
