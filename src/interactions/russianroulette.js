@@ -18,11 +18,6 @@ new ButtonBuilder()
 .setStyle(ButtonStyle.Danger),
 
 new ButtonBuilder()
-.setCustomId("rr_spin")
-.setLabel("Spin Chamber")
-.setStyle(ButtonStyle.Primary),
-
-new ButtonBuilder()
 .setCustomId("rr_surrender")
 .setLabel("Surrender")
 .setStyle(ButtonStyle.Secondary)
@@ -31,7 +26,7 @@ new ButtonBuilder()
 
 }
 
-/* GAME EMBED */
+/* EMBED */
 
 function gameEmbed(state){
 
@@ -191,33 +186,6 @@ description:`*click*
 Safe.
 
 Chamber: ${game.chamber} / 6
-
-Turn: <@${game.turn}>`
-}],
-components:[gameButtons()]
-});
-
-return;
-}
-
-/* SPIN */
-
-if(id === "rr_spin"){
-
-game.bullet = Math.floor(Math.random()*6)+1;
-game.chamber = 1;
-
-game.turn =
-interaction.user.id === game.player1
-? game.player2
-: game.player1;
-
-await interaction.update({
-embeds:[{
-title:"🔫 Russian Roulette",
-description:`${interaction.user} spins the chamber...
-
-Chamber: 1 / 6
 
 Turn: <@${game.turn}>`
 }],
