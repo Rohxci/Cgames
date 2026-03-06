@@ -97,14 +97,14 @@ components:[drawRow(false)]
 
 });
 
-/* random wait */
+/* WAIT RANDOM TIME */
 
 setTimeout(async () => {
 
 const game = games.get(interaction.channelId);
 if(!game) return;
 
-/* fake signal chance */
+/* FAKE SIGNAL */
 
 if(Math.random() < 0.5){
 
@@ -123,6 +123,8 @@ createEmbed(
 components:[drawRow(true)]
 
 });
+
+/* REAL DRAW AFTER FAKE */
 
 setTimeout(async () => {
 
@@ -149,6 +151,8 @@ components:[drawRow(true)]
 },2000);
 
 }else{
+
+/* DIRECT DRAW */
 
 game.phase = "draw";
 game.drawTime = Date.now();
@@ -191,10 +195,8 @@ ephemeral:true
 }
 
 await interaction.update({
-
 embeds:[createEmbed("❌ Challenge Declined","The challenge was declined.")],
 components:[]
-
 });
 
 return;
@@ -217,10 +219,8 @@ ephemeral:true
 }
 
 await interaction.update({
-
 embeds:[createEmbed("❌ Challenge Cancelled","The challenge was cancelled.")],
 components:[]
-
 });
 
 return;
@@ -267,7 +267,7 @@ return;
 
 }
 
-/* DRAW CLICK */
+/* DRAW BUTTON */
 
 if(id === "qd_draw"){
 
@@ -283,6 +283,8 @@ ephemeral:true
 });
 
 }
+
+/* TOO EARLY */
 
 if(game.phase !== "draw"){
 
@@ -306,6 +308,8 @@ components:[drawRow(false)]
 });
 
 }
+
+/* VALID DRAW */
 
 const reaction = Date.now() - game.drawTime;
 
