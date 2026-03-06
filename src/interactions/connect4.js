@@ -76,7 +76,6 @@ board[r+3]?.[c-3]===symbol
 }
 
 return false;
-
 }
 
 function buildButtons(board,disabledAll=false){
@@ -113,7 +112,6 @@ new ButtonBuilder()
 );
 
 return [row1,row2];
-
 }
 
 module.exports={
@@ -162,17 +160,13 @@ embeds:[embed],
 components:buildButtons(board,false)
 });
 
-/* LOCK CHANNEL */
-
 const game=games.get(interaction.channelId);
-
 game.originalChannelName=await lockChannel(
 interaction.channel,
 [p1,p2]
 );
 
 return;
-
 }
 
 /* DECLINE */
@@ -195,7 +189,6 @@ components:[]
 });
 
 return;
-
 }
 
 /* SURRENDER */
@@ -221,7 +214,6 @@ interaction.user.id===game.player1
 : game.player1;
 
 await unlockChannel(interaction.channel,game.originalChannelName);
-
 games.delete(interaction.channelId);
 
 await interaction.update({
@@ -233,7 +225,6 @@ components:buildButtons(game.board,true)
 });
 
 return;
-
 }
 
 /* MOVE */
@@ -268,7 +259,6 @@ ephemeral:true
 if(checkWin(game.board,symbol)){
 
 await unlockChannel(interaction.channel,game.originalChannelName);
-
 games.delete(interaction.channelId);
 
 return interaction.update({
@@ -285,7 +275,6 @@ components:buildButtons(game.board,true)
 if(checkDraw(game.board)){
 
 await unlockChannel(interaction.channel,game.originalChannelName);
-
 games.delete(interaction.channelId);
 
 return interaction.update({
@@ -312,7 +301,6 @@ components:buildButtons(game.board,false)
 });
 
 return;
-
 }
 
 }
