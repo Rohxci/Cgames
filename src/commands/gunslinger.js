@@ -78,17 +78,35 @@ new ButtonBuilder()
 );
 
 await interaction.reply({
+
 embeds:[{
-title:"🤠 Gunslinger Duel",
-description:`<@${interaction.user.id}> challenged <@${opponent.id}>!
 
-Each player has **5 lives** ❤️
+title:"🤠 Gunslinger Duel Challenge",
 
-Attack = shoot (needs ammo)
-Defend = block attack
-Reload = gain ammo`
+description:`<@${interaction.user.id}> challenged <@${opponent.id}> to a duel!
+
+⚔️ **Game Rules**
+
+Each player starts with **5 lives ❤️** and **0 ammo 🔫**
+
+**Attack**
+Shoot your opponent. Requires **1 ammo**.
+
+**Defend**
+Blocks an incoming attack.
+
+**Reload**
+Gain **1 ammo** but you are vulnerable.
+
+**Surrender**
+Give up the duel and your opponent wins.
+
+🎯 The duel continues in rounds until one player's **lives reach 0**.`
+
 }],
+
 components:[row]
+
 });
 
 }
