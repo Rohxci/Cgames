@@ -7,7 +7,9 @@ const {
 Client,
 Collection,
 GatewayIntentBits,
-Events
+Events,
+REST,
+Routes
 } = require("discord.js");
 
 const client = new Client({
@@ -19,6 +21,7 @@ client.handlers = [];
 
 /* LOAD COMMANDS */
 
+const commands = [];
 const commandsPath = path.join(__dirname, "commands");
 
 if (fs.existsSync(commandsPath)) {
@@ -31,6 +34,7 @@ const filePath = path.join(commandsPath, file);
 const command = require(filePath);
 
 client.commands.set(command.data.name, command);
+commands.push(command.data.toJSON());
 
 }
 
@@ -59,11 +63,36 @@ client.handlers.push(handler);
 
 /* READY */
 
-client.once("ready", () => {
+client.once("ready", async () => {
 
 console.log(`Logged in as ${client.user.tag}`);
 console.log(`Commands loaded: ${client.commands.size}`);
 console.log(`Handlers loaded: ${client.handlers.length}`);
+
+/* AUTO DEPLOY COMMANDS */
+
+try {
+
+const rest = new REST({ version: "10" }).setToken(process.env.DISCORD_TOKEN);
+
+await rest.put(
+
+Routes.applicationGuildCommands(
+process.env.CLIENT_ID,
+process.env.GUILD_ID
+),
+
+{ body: commands }
+
+);
+
+console.log("Slash commands deployed automatically.");
+
+} catch (error) {
+
+console.error("Command deploy error:", error);
+
+}
 
 });
 
@@ -73,7 +102,7 @@ client.on(Events.InteractionCreate, async interaction => {
 
 try {
 
-/* COMMANDS */
+/* COMMAND */
 
 if (interaction.isChatInputCommand()) {
 
@@ -87,7 +116,7 @@ return;
 
 }
 
-/* BUTTONS */
+/* BUTTON */
 
 if (interaction.isButton()) {
 
