@@ -5,6 +5,7 @@ ButtonStyle
 } = require("discord.js");
 
 const games = require("../systems/games");
+const { lockChannel, unlockChannel } = require("../systems/channelLock");
 
 function moveButtons(){
 
@@ -101,6 +102,13 @@ Choose your move.`
 components:[moveButtons()]
 });
 
+/* LOCK CHANNEL */
+
+state.originalChannelName = await lockChannel(
+interaction.channel,
+[p1,p2]
+);
+
 return;
 
 }
@@ -133,6 +141,8 @@ ephemeral:true
 }
 
 const winner = interaction.user.id === p1 ? p2 : p1;
+
+await unlockChannel(interaction.channel,state.originalChannelName);
 
 games.delete(interaction.channelId);
 
@@ -173,7 +183,7 @@ content:"Move locked.",
 ephemeral:true
 });
 
-/* UPDATE READY STATUS */
+/* UPDATE READY */
 
 await interaction.message.edit({
 embeds:[readyEmbed(state)],
@@ -210,11 +220,13 @@ state.lives[p1]--;
 
 state.choices = {};
 
-/* WIN CHECK */
+/* WIN */
 
 if(state.lives[p1] <= 0 || state.lives[p2] <= 0){
 
 const winner = state.lives[p1] > 0 ? p1 : p2;
+
+await unlockChannel(interaction.channel,state.originalChannelName);
 
 games.delete(interaction.channelId);
 
