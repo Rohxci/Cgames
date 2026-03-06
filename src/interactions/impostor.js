@@ -118,8 +118,6 @@ if(state.players.length<2){
 return interaction.reply({content:"Need at least 2 players.",ephemeral:true});
 }
 
-/* CREATE THREAD */
-
 const thread = await interaction.channel.threads.create({
 name:"🎭 impostor-game",
 type:ChannelType.PrivateThread
@@ -130,13 +128,9 @@ state.revealed = {};
 state.endDiscussionVotes = [];
 state.votes = {};
 
-/* ADD PLAYERS */
-
 for(const p of state.players){
 await thread.members.add(p);
 }
-
-/* CATEGORY */
 
 const categories = Object.keys(THEMES);
 const category = categories[Math.floor(Math.random()*categories.length)];
@@ -154,8 +148,6 @@ embeds:[createEmbed(
 components:[]
 });
 
-/* THREAD START */
-
 await thread.send({
 embeds:[createEmbed(
 "🎭 Game Started",
@@ -170,8 +162,6 @@ new ButtonBuilder()
 )
 ]
 });
-
-/* DISCUSSION */
 
 await thread.send({
 embeds:[createEmbed(
@@ -190,7 +180,7 @@ new ButtonBuilder()
 
 }
 
-/* REVEAL ROLE */
+/* REVEAL */
 
 if(id==="imp_reveal"){
 
@@ -336,9 +326,14 @@ for(const voter in state.votes){
 results+=`<@${voter}> → <@${state.votes[voter]}>\n`;
 }
 
+const mainChannel = interaction.channel.parent;
+
+const playersPing = state.players.map(p=>`<@${p}>`).join(" ");
+
 if(voted===state.impostor){
 
-await interaction.channel.send({
+await mainChannel.send({
+content:playersPing,
 embeds:[createEmbed(
 "🎉 Crew Wins",
 `${results}
@@ -349,7 +344,8 @@ Impostor was <@${state.impostor}>`
 
 }else{
 
-await interaction.channel.send({
+await mainChannel.send({
+content:playersPing,
 embeds:[createEmbed(
 "💀 Impostor Wins",
 `${results}
@@ -364,6 +360,6 @@ try{
 await interaction.channel.delete();
 }catch{}
 
-games.delete(interaction.channel.parentId || interaction.channel.id);
+games.delete(mainChannel.id);
 
 }
