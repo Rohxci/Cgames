@@ -65,23 +65,17 @@ Cards
 
 /* menu */
 
-function menu(hand,top){
-
-const playableCards=hand
-.map((c,i)=>({c,i}))
-.filter(x=>playable(x.c,top));
-
-const list=playableCards.length?playableCards:hand.map((c,i)=>({c,i}));
+function menu(hand){
 
 return new ActionRowBuilder().addComponents(
 
 new StringSelectMenuBuilder()
 .setCustomId("uno_play")
 .setPlaceholder("Play card")
-.addOptions(list.map(x=>({
+.addOptions(hand.map((c,i)=>({
 
-label:x.c,
-value:String(x.i)
+label:c,
+value:String(i)
 
 })))
 
@@ -104,6 +98,21 @@ new ButtonBuilder()
 .setCustomId("uno_surrender")
 .setLabel("Surrender")
 .setStyle(ButtonStyle.Danger)
+
+);
+
+}
+
+/* UNO button */
+
+function unoButton(){
+
+return new ActionRowBuilder().addComponents(
+
+new ButtonBuilder()
+.setCustomId("uno_call")
+.setLabel("UNO!")
+.setStyle(ButtonStyle.Success)
 
 );
 
@@ -162,7 +171,8 @@ h2,
 deck:d,
 top,
 turn:p1,
-main:i.channel.id
+main:i.channel.id,
+unoPlayer:null
 
 });
 
@@ -178,7 +188,7 @@ const g=games.get(thread.id);
 await thread.send({
 
 embeds:[table(g)],
-components:[menu(h1,top),buttons()]
+components:[menu(h1),buttons()]
 
 });
 
@@ -206,6 +216,40 @@ return;
 const g=games.get(i.channel.id);
 if(!g) return;
 
+/* UNO CALL */
+
+if(id==="uno_call"){
+
+if(!g.unoPlayer) return;
+
+if(i.user.id===g.unoPlayer){
+
+g.unoPlayer=null;
+
+return i.reply({
+content:"UNO confirmed!",
+ephemeral:true
+});
+
+}
+
+/* opponent caught */
+
+const target=g.unoPlayer;
+
+const hand=target===g.p1?g.h1:g.h2;
+
+hand.push(g.deck.shift());
+hand.push(g.deck.shift());
+
+g.unoPlayer=null;
+
+await i.channel.send(`<@${target}> forgot UNO and draws 2 cards!`);
+
+return;
+
+}
+
 /* DRAW */
 
 if(id==="uno_draw"){
@@ -223,7 +267,7 @@ g.turn=i.user.id===g.p1?g.p2:g.p1;
 await i.update({
 
 embeds:[table(g)],
-components:[menu(g.turn===g.p1?g.h1:g.h2,g.top),buttons()]
+components:[menu(g.turn===g.p1?g.h1:g.h2),buttons()]
 
 });
 
@@ -258,7 +302,19 @@ return i.reply({content:"Not your turn.",ephemeral:true});
 
 const hand=i.user.id===g.p1?g.h1:g.h2;
 
-const card=hand.splice(i.values[0],1)[0];
+const index=parseInt(i.values[0]);
+const card=hand[index];
+
+if(!playable(card,g.top)){
+
+return i.reply({
+content:"You cannot play that card.",
+ephemeral:true
+});
+
+}
+
+hand.splice(index,1);
 
 /* +2 */
 
@@ -299,11 +355,18 @@ g.top=card;
 
 }
 
-/* UNO warning */
+/* UNO */
 
 if(hand.length===1){
 
-await i.channel.send(`⚠️ UNO!\n<@${i.user.id}> has only one card left`);
+g.unoPlayer=i.user.id;
+
+await i.channel.send({
+
+content:`⚠️ <@${i.user.id}> has one card left!`,
+components:[unoButton()]
+
+});
 
 }
 
@@ -326,7 +389,7 @@ return;
 await i.update({
 
 embeds:[table(g)],
-components:[menu(g.turn===g.p1?g.h1:g.h2,g.top),buttons()]
+components:[menu(g.turn===g.p1?g.h1:g.h2),buttons()]
 
 });
 
