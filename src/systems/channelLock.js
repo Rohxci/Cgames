@@ -7,11 +7,9 @@ SendMessages:false
 });
 
 for(const player of players){
-
 await channel.permissionOverwrites.edit(player,{
 SendMessages:true
 });
-
 }
 
 const originalName = channel.name;
