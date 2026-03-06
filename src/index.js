@@ -116,9 +116,9 @@ return;
 
 }
 
-/* BUTTON */
+/* BUTTON + SELECT MENU */
 
-if (interaction.isButton()) {
+if (interaction.isButton() || interaction.isStringSelectMenu()) {
 
 for (const handler of client.handlers) {
 
@@ -132,7 +132,7 @@ return;
 }
 
 }
-
+  
 } catch (error) {
 
 console.error(error);
