@@ -8,7 +8,7 @@ ChannelType
 const games = require("../systems/games");
 const createEmbed = require("../utils/embed");
 
-/* CARD SYSTEM */
+/* CARDS */
 
 const suits=["♠","♥","♦","♣"];
 const ranks=["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
@@ -31,7 +31,7 @@ function card(c){
 return `${c.r}${c.s}`;
 }
 
-function handValue(hand){
+function value(hand){
 
 let v=0;
 let aces=0;
@@ -90,12 +90,12 @@ return "dealer";
 
 function dealerTurn(state){
 
-let v=handValue(state.dealer);
+let v=value(state.dealer);
 
 while(v<17){
 
 state.dealer.push(state.deck.pop());
-v=handValue(state.dealer);
+v=value(state.dealer);
 
 }
 
@@ -103,9 +103,9 @@ v=handValue(state.dealer);
 
 /* RESULT */
 
-function calculate(state){
+function result(state){
 
-const dealerValue=handValue(state.dealer);
+const dealer=value(state.dealer);
 
 let best=0;
 let winners=[];
@@ -114,11 +114,11 @@ for(const p of state.players){
 
 if(state.bust.includes(p)) continue;
 
-const v=handValue(state.hands[p]);
+const v=value(state.hands[p]);
 
 if(v>21) continue;
 
-if(dealerValue<=21 && v<=dealerValue) continue;
+if(dealer<=21 && v<=dealer) continue;
 
 if(v>best){
 best=v;
@@ -130,13 +130,13 @@ winners.push(p);
 
 }
 
-return {dealerValue,winners};
+return {dealer,winners};
 
 }
 
 /* TABLE */
 
-async function sendTable(thread,state){
+async function table(thread,state){
 
 let text="";
 
@@ -145,7 +145,7 @@ for(const p of state.players){
 const user=await thread.client.users.fetch(p);
 
 const hand=state.hands[p];
-const val=handValue(hand);
+const val=value(hand);
 
 text+=`\n${user.username}
 ${hand.map(card).join(" ")}
@@ -209,13 +209,13 @@ for(const p of state.players){
 state.hands[p]=[state.deck.pop(),state.deck.pop()];
 }
 
-sendTable(thread,state);
+table(thread,state);
 
 }
 
 /* VOTE PANEL */
 
-async function votePanel(thread,state){
+async function vote(thread,state){
 
 let text="Next Round Vote\n\n";
 
@@ -257,47 +257,22 @@ return i.isButton() && i.customId.startsWith("bjd_");
 
 async run(interaction){
 
-let state=findGame(interaction.channel);
+const state=findGame(interaction.channel);
+if(!state) return;
 
 const id=interaction.customId;
 
-/* LOBBY BUTTONS */
+/* JOIN */
 
 if(id==="bjd_join"){
 
 if(state.players.includes(interaction.user.id)) return;
 
 if(state.players.length>=6){
-return interaction.reply({content:"Table is full.",ephemeral:true});
+return interaction.reply({content:"Table full.",ephemeral:true});
 }
 
 state.players.push(interaction.user.id);
-
-await interaction.update({
-embeds:[{
-title:"♠️ Blackjack Table",
-description:`Host: <@${state.host}>
-
-Players (${state.players.length}/6)
-${state.players.map(p=>`• <@${p}>`).join("\n")}
-
-Minimum players: 2
-Maximum players: 6`
-}],
-components:interaction.message.components
-});
-
-return;
-
-}
-
-if(id==="bjd_leave"){
-
-state.players=state.players.filter(p=>p!==interaction.user.id);
-
-if(interaction.user.id===state.host && state.players.length>0){
-state.host=state.players[0];
-}
 
 await interaction.update({
 embeds:[{
@@ -314,17 +289,21 @@ return;
 
 }
 
-if(id==="bjd_cancel"){
+/* LEAVE */
 
-if(interaction.user.id!==state.host){
-return interaction.reply({content:"Only host can cancel.",ephemeral:true});
-}
+if(id==="bjd_leave"){
 
-games.delete(interaction.channelId);
+state.players=state.players.filter(p=>p!==interaction.user.id);
 
 await interaction.update({
-embeds:[createEmbed("❌ Blackjack","Game cancelled.")],
-components:[]
+embeds:[{
+title:"♠️ Blackjack Table",
+description:`Host: <@${state.host}>
+
+Players (${state.players.length}/6)
+${state.players.map(p=>`• <@${p}>`).join("\n")}`
+}],
+components:interaction.message.components
 });
 
 return;
@@ -335,12 +314,8 @@ return;
 
 if(id==="bjd_start"){
 
-if(interaction.user.id!==state.host){
-return interaction.reply({content:"Only host can start.",ephemeral:true});
-}
-
 if(state.players.length<2){
-return interaction.reply({content:"Need at least 2 players.",ephemeral:true});
+return interaction.reply({content:"Need 2 players.",ephemeral:true});
 }
 
 const thread=await interaction.channel.threads.create({
@@ -357,7 +332,7 @@ await thread.members.add(p);
 await interaction.update({
 embeds:[createEmbed(
 "♠️ Blackjack Table",
-`The match is happening in: <#${thread.id}>`
+`Game started in <#${thread.id}>`
 )],
 components:[]
 });
@@ -380,7 +355,7 @@ return interaction.reply({content:"Not your turn.",ephemeral:true});
 
 state.hands[p].push(state.deck.pop());
 
-if(handValue(state.hands[p])>21){
+if(value(state.hands[p])>21){
 state.bust.push(p);
 }
 
@@ -390,28 +365,26 @@ if(next==="dealer"){
 
 dealerTurn(state);
 
-const result=calculate(state);
+const r=result(state);
 
-const main=interaction.channel.parent;
-
-let text=`Dealer — ${result.dealerValue}\n\n`;
+let text=`Dealer — ${r.dealer}\n\n`;
 
 for(const pl of state.players){
 
 const user=await interaction.client.users.fetch(pl);
 
-text+=`${user.username} — ${state.bust.includes(pl) ? "bust" : handValue(state.hands[pl])}\n`;
+text+=`${user.username} — ${state.bust.includes(pl) ? "bust" : value(state.hands[pl])}\n`;
 
 }
 
-if(result.winners.length===0){
+if(r.winners.length===0){
 text+="\nDealer wins";
 }
 else{
 
 const names=[];
 
-for(const w of result.winners){
+for(const w of r.winners){
 const u=await interaction.client.users.fetch(w);
 names.push(u.username);
 }
@@ -420,28 +393,27 @@ text+=`\nWinner: ${names.join(", ")}`;
 
 }
 
-await main.send({
-content:state.players.map(p=>`<@${p}>`).join(" "),
+await interaction.channel.send({
 embeds:[createEmbed("♠️ Blackjack Results",text)]
 });
 
 if(state.round>=20){
 
 await interaction.channel.delete();
-games.delete(main.id);
+games.delete(interaction.channel.parentId);
 return;
 
 }
 
 state.round++;
 
-votePanel(interaction.channel,state);
+vote(interaction.channel,state);
 
 return;
 
 }
 
-sendTable(interaction.channel,state);
+table(interaction.channel,state);
 
 }
 
@@ -463,28 +435,26 @@ if(next==="dealer"){
 
 dealerTurn(state);
 
-const result=calculate(state);
+const r=result(state);
 
-const main=interaction.channel.parent;
-
-let text=`Dealer — ${result.dealerValue}\n\n`;
+let text=`Dealer — ${r.dealer}\n\n`;
 
 for(const pl of state.players){
 
 const user=await interaction.client.users.fetch(pl);
 
-text+=`${user.username} — ${state.bust.includes(pl) ? "bust" : handValue(state.hands[pl])}\n`;
+text+=`${user.username} — ${state.bust.includes(pl) ? "bust" : value(state.hands[pl])}\n`;
 
 }
 
-if(result.winners.length===0){
+if(r.winners.length===0){
 text+="\nDealer wins";
 }
 else{
 
 const names=[];
 
-for(const w of result.winners){
+for(const w of r.winners){
 const u=await interaction.client.users.fetch(w);
 names.push(u.username);
 }
@@ -493,28 +463,27 @@ text+=`\nWinner: ${names.join(", ")}`;
 
 }
 
-await main.send({
-content:state.players.map(p=>`<@${p}>`).join(" "),
+await interaction.channel.send({
 embeds:[createEmbed("♠️ Blackjack Results",text)]
 });
 
 if(state.round>=20){
 
 await interaction.channel.delete();
-games.delete(main.id);
+games.delete(interaction.channel.parentId);
 return;
 
 }
 
 state.round++;
 
-votePanel(interaction.channel,state);
+vote(interaction.channel,state);
 
 return;
 
 }
 
-sendTable(interaction.channel,state);
+table(interaction.channel,state);
 
 }
 
@@ -524,7 +493,7 @@ if(id==="bjd_surrender"){
 
 state.bust.push(interaction.user.id);
 
-sendTable(interaction.channel,state);
+table(interaction.channel,state);
 
 }
 
@@ -544,15 +513,13 @@ startRound(interaction.channel,state);
 
 }
 
-/* FINISH GAME */
+/* FINISH */
 
 if(id==="bjd_finish"){
 
-const main=interaction.channel.parent;
-
 await interaction.channel.delete();
 
-games.delete(main.id);
+games.delete(interaction.channel.parentId);
 
 }
 
