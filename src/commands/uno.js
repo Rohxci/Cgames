@@ -41,8 +41,8 @@ description:`${interaction.user} challenged ${opponent}
 Rules
 • Each player starts with 7 cards
 • Match color or number
-• +2 makes opponent draw cards
 • Skip skips opponent turn
+• +2 makes opponent draw
 • Wild lets you choose color
 • First player with no cards wins`
 };
