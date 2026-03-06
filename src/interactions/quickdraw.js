@@ -40,7 +40,15 @@ match(interaction){
 
 if(!interaction.isButton()) return false;
 
-return interaction.customId.startsWith("qd");
+const id = interaction.customId;
+
+return (
+id.startsWith("qd_accept_") ||
+id.startsWith("qd_decline_") ||
+id.startsWith("qd_cancel_") ||
+id === "qd_draw" ||
+id === "qd_surrender"
+);
 
 },
 
@@ -115,8 +123,6 @@ createEmbed(
 components:[drawRow(true)]
 
 });
-
-/* after fake, real draw */
 
 setTimeout(async () => {
 
@@ -278,8 +284,6 @@ ephemeral:true
 
 }
 
-/* too early */
-
 if(game.phase !== "draw"){
 
 const winner =
@@ -302,8 +306,6 @@ components:[drawRow(false)]
 });
 
 }
-
-/* valid draw */
 
 const reaction = Date.now() - game.drawTime;
 
