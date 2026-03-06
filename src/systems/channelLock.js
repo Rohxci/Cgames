@@ -1,40 +1,36 @@
-async function lockChannel(channel, players){
+async function lockChannel(channel, players) {
+  const everyone = channel.guild.roles.everyone;
 
-const everyone = channel.guild.roles.everyone;
+  await channel.permissionOverwrites.edit(everyone, {
+    SendMessages: false
+  });
 
-await channel.permissionOverwrites.edit(everyone,{
-SendMessages:false
-});
+  for (const player of players) {
+    await channel.permissionOverwrites.edit(player, {
+      SendMessages: true
+    });
+  }
 
-for(const player of players){
-await channel.permissionOverwrites.edit(player,{
-SendMessages:true
-});
+  const originalName = channel.name;
+
+  await channel.setName("🔴busy");
+
+  return originalName;
 }
 
-const originalName = channel.name;
+async function unlockChannel(channel, originalName) {
+  const everyone = channel.guild.roles.everyone;
 
-await channel.setName("🔴busy");
+  await channel.permissionOverwrites.edit(everyone, {
+    SendMessages: true
+  });
 
-return originalName;
-
-}
-
-async function unlockChannel(channel, originalName){
-
-const everyone = channel.guild.roles.everyone;
-
-await channel.permissionOverwrites.edit(everyone,{
-SendMessages:true
-});
-
-if(originalName){
-await channel.setName(originalName);
-}
-
+  if (originalName) {
+    await channel.setName(originalName);
+  }
 }
 
 module.exports = {
-lockChannel,
-unlockChannel
+  lockChannel,
+  unlockChannel
 };
