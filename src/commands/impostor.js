@@ -10,92 +10,85 @@ const channelCheck = require("../utils/channelCheck");
 
 const MAX_PLAYERS = 10;
 
-function lobbyEmbed(state){
+function lobbyEmbed(state) {
+  const players = state.players.map(p => `• <@${p}>`).join("\n") || "—";
 
-const players = state.players.map(p => `• <@${p}>`).join("\n");
-
-return {
-title: "🎭 Impostor Lobby",
-description: `Players: ${state.players.length}/${MAX_PLAYERS}
+  return {
+    title: "🎭 Impostor Lobby",
+    description: `Players: ${state.players.length}/${MAX_PLAYERS}
 
 Host: <@${state.hostId}>
 
-${players}`
-};
+**How it works**
+• One player is the impostor
+• Normal players get the secret word
+• The impostor only gets the category
+• Discuss in chat
+• The host starts the final vote
+• Vote the impostor to win
 
+${players}`
+  };
 }
 
-function lobbyButtons(){
+function lobbyButtons() {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("imp_join")
+        .setLabel("Join")
+        .setStyle(ButtonStyle.Success),
 
-return [
-new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("imp_leave")
+        .setLabel("Leave")
+        .setStyle(ButtonStyle.Secondary),
 
-new ButtonBuilder()
-.setCustomId("imp_join")
-.setLabel("Join")
-.setStyle(ButtonStyle.Success),
+      new ButtonBuilder()
+        .setCustomId("imp_start")
+        .setLabel("Start")
+        .setStyle(ButtonStyle.Primary),
 
-new ButtonBuilder()
-.setCustomId("imp_leave")
-.setLabel("Leave")
-.setStyle(ButtonStyle.Secondary),
-
-new ButtonBuilder()
-.setCustomId("imp_start")
-.setLabel("Start")
-.setStyle(ButtonStyle.Primary),
-
-new ButtonBuilder()
-.setCustomId("imp_cancel")
-.setLabel("Cancel")
-.setStyle(ButtonStyle.Danger)
-
-)
-];
-
+      new ButtonBuilder()
+        .setCustomId("imp_cancel")
+        .setLabel("Cancel")
+        .setStyle(ButtonStyle.Danger)
+    )
+  ];
 }
 
 module.exports = {
+  data: new SlashCommandBuilder()
+    .setName("impostor")
+    .setDescription("Start an Impostor game"),
 
-data: new SlashCommandBuilder()
-.setName("impostor")
-.setDescription("Start an Impostor game"),
+  async execute(interaction) {
+    if (!channelCheck(interaction)) return;
 
-async execute(interaction){
+    if (games.get(interaction.channelId)) {
+      return interaction.reply({
+        content: "A game is already running in this channel.",
+        ephemeral: true
+      });
+    }
 
-if(!channelCheck(interaction)) return;
+    const state = {
+      type: "impostor",
+      hostId: interaction.user.id,
+      players: [interaction.user.id],
+      revealed: [],
+      votes: {},
+      phase: "lobby",
+      impostorId: null,
+      category: null,
+      word: null
+    };
 
-/* prevent multiple games */
+    games.create(interaction.channelId, state);
 
-if(games.get(interaction.channelId)){
-
-return interaction.reply({
-content:"A game is already running in this channel.",
-ephemeral:true
-});
-
-}
-
-/* create game */
-
-const state = {
-type:"impostor",
-hostId: interaction.user.id,
-players:[interaction.user.id],
-phase:"lobby"
-};
-
-games.create(interaction.channelId,state);
-
-/* show lobby */
-
-await interaction.reply({
-
-embeds:[lobbyEmbed(state)],
-components:lobbyButtons()
-
-});
-
-}
-
+    await interaction.reply({
+      embeds: [lobbyEmbed(state)],
+      components: lobbyButtons()
+    });
+  }
 };
