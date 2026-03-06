@@ -10,7 +10,7 @@ const games = require("../systems/games");
 
 const COLORS = ["🔴","🟡","🟢","🔵"];
 
-/* DECK */
+/* BUILD DECK */
 
 function buildDeck(){
 
@@ -35,7 +35,7 @@ return deck.sort(()=>Math.random()-0.5);
 
 }
 
-/* PLAYABLE */
+/* PLAYABLE CARDS */
 
 function playable(hand,top){
 
@@ -92,7 +92,7 @@ new ButtonBuilder()
 
 }
 
-/* MENU */
+/* CARD MENU */
 
 function menu(cards){
 
@@ -164,15 +164,20 @@ ephemeral:true
 });
 }
 
+/* CREATE PRIVATE THREAD */
+
 const thread=await interaction.channel.threads.create({
 name:`uno-${interaction.user.username}`,
 type:ChannelType.PrivateThread,
-autoArchiveDuration:60,
-invitable:false
+autoArchiveDuration:60
 });
+
+/* ADD PLAYERS */
 
 await thread.members.add(p1);
 await thread.members.add(p2);
+
+/* CREATE GAME */
 
 const deck=buildDeck();
 
@@ -192,16 +197,20 @@ hand2,
 top
 });
 
+/* UPDATE INVITE */
+
 await interaction.update({
 content:`🃏 UNO started in <#${thread.id}>`,
 embeds:[],
 components:[]
 });
 
-const state=games.get(thread.id);
+/* SEND TABLE */
+
+const game=games.get(thread.id);
 
 await thread.send({
-embeds:[table(state)],
+embeds:[table(game)],
 components:[
 menu(playable(hand1,top).length ? playable(hand1,top) : hand1),
 buttons()
@@ -258,7 +267,7 @@ return;
 
 }
 
-/* GAME */
+/* GET GAME */
 
 const game=games.get(interaction.channelId);
 if(!game) return;
@@ -293,7 +302,7 @@ game.turn===game.player1
 
 const cards=playable(nextHand,game.top);
 
-const menuCards = cards.length ? cards : nextHand;
+const menuCards=cards.length ? cards : nextHand;
 
 await interaction.update({
 embeds:[table(game)],
@@ -364,11 +373,11 @@ return;
 
 }
 
-applyCard(card,game,interaction);
+apply(card,game,interaction);
 
 }
 
-/* COLOR */
+/* COLOR SELECT */
 
 if(id==="uno_color"){
 
@@ -381,11 +390,13 @@ game.top=`${color} Wild`;
 
 game.pendingWildPlayer=null;
 
-applyCard(null,game,interaction);
+apply(null,game,interaction);
 
 }
 
-function applyCard(card,game,interaction){
+/* APPLY CARD */
+
+function apply(card,game,interaction){
 
 if(card && card.includes("+2")){
 
@@ -441,7 +452,6 @@ return;
 }
 
 const cards=playable(hand,game.top);
-
 const menuCards=cards.length ? cards : hand;
 
 interaction.update({
