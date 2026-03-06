@@ -8,7 +8,7 @@ ChannelType
 
 const games = require("../systems/games");
 
-const COLORS = ["🔴","🟡","🟢","🔵"];
+const COLORS=["🔴","🟡","🟢","🔵"];
 
 /* deck */
 
@@ -31,6 +31,19 @@ return d.sort(()=>Math.random()-0.5);
 
 }
 
+/* playable */
+
+function playable(card,top){
+
+if(card==="🌈 Wild") return true;
+
+const [tc,tv]=top.split(" ");
+const [c,v]=card.split(" ");
+
+return c===tc || v===tv;
+
+}
+
 /* embed */
 
 function table(g){
@@ -38,7 +51,7 @@ function table(g){
 return{
 title:"🃏 UNO Duel",
 description:`Top Card
-${g.top}
+**${g.top}**
 
 Turn
 <@${g.turn}>
@@ -52,17 +65,23 @@ Cards
 
 /* menu */
 
-function menu(hand){
+function menu(hand,top){
+
+const playableCards=hand
+.map((c,i)=>({c,i}))
+.filter(x=>playable(x.c,top));
+
+const list=playableCards.length?playableCards:hand.map((c,i)=>({c,i}));
 
 return new ActionRowBuilder().addComponents(
 
 new StringSelectMenuBuilder()
 .setCustomId("uno_play")
 .setPlaceholder("Play card")
-.addOptions(hand.map((c,i)=>({
+.addOptions(list.map(x=>({
 
-label:c,
-value:String(i)
+label:x.c,
+value:String(x.i)
 
 })))
 
@@ -90,8 +109,6 @@ new ButtonBuilder()
 
 }
 
-/* handler */
-
 module.exports={
 
 match(i){
@@ -108,7 +125,7 @@ async run(i){
 
 const id=i.customId;
 
-/* accept */
+/* ACCEPT */
 
 if(id.startsWith("uno_accept_")){
 
@@ -120,7 +137,7 @@ return i.reply({content:"Only opponent can accept.",ephemeral:true});
 
 const thread=await i.channel.threads.create({
 
-name:"uno-game",
+name:`uno-${i.user.username}`,
 type:ChannelType.PrivateThread
 
 });
@@ -151,7 +168,7 @@ main:i.channel.id
 
 await i.update({
 
-content:`UNO started in <#${thread.id}>`,
+content:`🃏 UNO started in <#${thread.id}>`,
 components:[]
 
 });
@@ -161,7 +178,7 @@ const g=games.get(thread.id);
 await thread.send({
 
 embeds:[table(g)],
-components:[menu(h1),buttons()]
+components:[menu(h1,top),buttons()]
 
 });
 
@@ -169,7 +186,7 @@ return;
 
 }
 
-/* decline */
+/* DECLINE */
 
 if(id.startsWith("uno_decline_")){
 
@@ -184,12 +201,12 @@ return;
 
 }
 
-/* game */
+/* GAME */
 
 const g=games.get(i.channel.id);
 if(!g) return;
 
-/* draw */
+/* DRAW */
 
 if(id==="uno_draw"){
 
@@ -206,7 +223,7 @@ g.turn=i.user.id===g.p1?g.p2:g.p1;
 await i.update({
 
 embeds:[table(g)],
-components:[menu(g.turn===g.p1?g.h1:g.h2),buttons()]
+components:[menu(g.turn===g.p1?g.h1:g.h2,g.top),buttons()]
 
 });
 
@@ -214,7 +231,7 @@ return;
 
 }
 
-/* surrender */
+/* SURRENDER */
 
 if(id==="uno_surrender"){
 
@@ -222,7 +239,7 @@ const winner=i.user.id===g.p1?g.p2:g.p1;
 
 const main=i.guild.channels.cache.get(g.main);
 
-await main.send(`UNO finished. Winner: <@${winner}>`);
+await main.send(`🃏 UNO finished\nWinner: <@${winner}>`);
 
 games.delete(i.channel.id);
 
@@ -232,7 +249,7 @@ return;
 
 }
 
-/* play */
+/* PLAY */
 
 if(id==="uno_play"){
 
@@ -243,13 +260,60 @@ const hand=i.user.id===g.p1?g.h1:g.h2;
 
 const card=hand.splice(i.values[0],1)[0];
 
+/* +2 */
+
+if(card.includes("+2")){
+
+const opp=i.user.id===g.p1?g.p2:g.p1;
+
+const target=opp===g.p1?g.h1:g.h2;
+
+target.push(g.deck.shift());
+target.push(g.deck.shift());
+
+}
+
+/* skip */
+
+if(card.includes("Skip")){
+
+g.turn=i.user.id;
+
+}else{
+
+g.turn=i.user.id===g.p1?g.p2:g.p1;
+
+}
+
+/* wild */
+
+if(card==="🌈 Wild"){
+
+const color=COLORS[Math.floor(Math.random()*4)];
+
+g.top=`${color} Wild`;
+
+}else{
+
 g.top=card;
+
+}
+
+/* UNO warning */
+
+if(hand.length===1){
+
+await i.channel.send(`⚠️ UNO!\n<@${i.user.id}> has only one card left`);
+
+}
+
+/* WIN */
 
 if(hand.length===0){
 
 const main=i.guild.channels.cache.get(g.main);
 
-await main.send(`UNO finished. Winner: <@${i.user.id}>`);
+await main.send(`🃏 UNO finished\nWinner: <@${i.user.id}>`);
 
 games.delete(i.channel.id);
 
@@ -259,12 +323,10 @@ return;
 
 }
 
-g.turn=i.user.id===g.p1?g.p2:g.p1;
-
 await i.update({
 
 embeds:[table(g)],
-components:[menu(g.turn===g.p1?g.h1:g.h2),buttons()]
+components:[menu(g.turn===g.p1?g.h1:g.h2,g.top),buttons()]
 
 });
 
