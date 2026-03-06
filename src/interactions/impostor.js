@@ -118,7 +118,7 @@ if(state.players.length<2){
 return interaction.reply({content:"Need at least 2 players.",ephemeral:true});
 }
 
-/* THREAD */
+/* CREATE THREAD */
 
 const thread = await interaction.channel.threads.create({
 name:"🎭 impostor-game",
@@ -171,6 +171,8 @@ new ButtonBuilder()
 ]
 });
 
+/* DISCUSSION */
+
 await thread.send({
 embeds:[createEmbed(
 "💬 Discussion",
@@ -188,7 +190,7 @@ new ButtonBuilder()
 
 }
 
-/* REVEAL */
+/* REVEAL ROLE */
 
 if(id==="imp_reveal"){
 
@@ -248,14 +250,18 @@ ephemeral:true
 
 const row = new ActionRowBuilder();
 
-state.players.forEach(p=>{
+for(const p of state.players){
+
+const user = await interaction.client.users.fetch(p);
+
 row.addComponents(
 new ButtonBuilder()
 .setCustomId(`imp_vote_${p}`)
-.setLabel(`Vote ${p}`)
+.setLabel(`Vote ${user.username}`)
 .setStyle(ButtonStyle.Secondary)
 );
-});
+
+}
 
 row.addComponents(
 new ButtonBuilder()
@@ -312,7 +318,7 @@ finishGame(interaction,state);
 
 };
 
-/* FINISH */
+/* FINISH GAME */
 
 async function finishGame(interaction,state){
 
@@ -353,6 +359,10 @@ Real impostor: <@${state.impostor}>`
 });
 
 }
+
+try{
+await interaction.channel.delete();
+}catch{}
 
 games.delete(interaction.channel.parentId || interaction.channel.id);
 
