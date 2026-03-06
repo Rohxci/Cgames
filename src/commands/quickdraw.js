@@ -27,8 +27,6 @@ if(!channelCheck(interaction)) return;
 
 const opponent = interaction.options.getUser("opponent");
 
-/* prevent bot */
-
 if(opponent.bot){
 
 return interaction.reply({
@@ -41,8 +39,6 @@ createEmbed(
 });
 
 }
-
-/* prevent self */
 
 if(opponent.id === interaction.user.id){
 
@@ -57,9 +53,7 @@ createEmbed(
 
 }
 
-/* one game per channel */
-
-if(games.exists(interaction.channelId)){
+if(games.get(interaction.channelId)){
 
 return interaction.reply({
 embeds:[
@@ -72,8 +66,6 @@ ephemeral:true
 });
 
 }
-
-/* embed */
 
 const embed = createEmbed(
 
@@ -90,8 +82,6 @@ Press **DRAW** when it appears.
 If you click too early, you lose.`
 
 );
-
-/* buttons */
 
 const row = new ActionRowBuilder().addComponents(
 
