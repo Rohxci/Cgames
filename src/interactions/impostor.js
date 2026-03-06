@@ -8,20 +8,15 @@ ChannelType
 const games = require("../systems/games");
 const createEmbed = require("../utils/embed");
 
-/* FIND GAME (CHANNEL OR THREAD) */
+/* FIND GAME */
 
-function findGame(channelId){
+function findGame(channel){
 
-const map = games._games || {};
+let game = games.get(channel.id);
+if(game) return game;
 
-for(const id in map){
-
-const g = map[id];
-
-if(id === channelId || g.thread === channelId){
-return g;
-}
-
+if(channel.isThread()){
+return games.get(channel.parentId);
 }
 
 return null;
@@ -49,7 +44,7 @@ return interaction.isButton() && interaction.customId.startsWith("imp_");
 
 async run(interaction){
 
-const state = findGame(interaction.channelId);
+const state = findGame(interaction.channel);
 if(!state) return;
 
 const id = interaction.customId;
@@ -102,7 +97,7 @@ if(interaction.user.id!==state.host){
 return interaction.reply({content:"Only host can cancel.",ephemeral:true});
 }
 
-games.delete(state.channelId);
+games.delete(interaction.channel.id);
 
 await interaction.update({
 embeds:[createEmbed("❌ Game cancelled","Lobby closed.")],
@@ -123,6 +118,8 @@ if(state.players.length<2){
 return interaction.reply({content:"Need at least 2 players.",ephemeral:true});
 }
 
+/* THREAD */
+
 const thread = await interaction.channel.threads.create({
 name:"🎭 impostor-game",
 type:ChannelType.PrivateThread
@@ -133,9 +130,13 @@ state.revealed = {};
 state.endDiscussionVotes = [];
 state.votes = {};
 
+/* ADD PLAYERS */
+
 for(const p of state.players){
 await thread.members.add(p);
 }
+
+/* CATEGORY */
 
 const categories = Object.keys(THEMES);
 const category = categories[Math.floor(Math.random()*categories.length)];
@@ -152,6 +153,8 @@ embeds:[createEmbed(
 )],
 components:[]
 });
+
+/* THREAD START */
 
 await thread.send({
 embeds:[createEmbed(
@@ -185,7 +188,7 @@ new ButtonBuilder()
 
 }
 
-/* REVEAL ROLE */
+/* REVEAL */
 
 if(id==="imp_reveal"){
 
@@ -237,7 +240,7 @@ const needed = Math.floor(state.players.length/2)+1;
 if(state.endDiscussionVotes.length < needed){
 
 return interaction.reply({
-content:`End discussion votes: ${state.endDiscussionVotes.length}/${needed}`,
+content:`Votes: ${state.endDiscussionVotes.length}/${needed}`,
 ephemeral:true
 });
 
@@ -309,22 +312,22 @@ finishGame(interaction,state);
 
 };
 
-/* FINISH GAME */
+/* FINISH */
 
 async function finishGame(interaction,state){
 
 const votes = {};
 
 Object.values(state.votes).forEach(v=>{
-votes[v] = (votes[v]||0)+1;
+votes[v]=(votes[v]||0)+1;
 });
 
 let voted = Object.keys(votes).sort((a,b)=>votes[b]-votes[a])[0];
 
-let results = "";
+let results="";
 
 for(const voter in state.votes){
-results += `<@${voter}> → <@${state.votes[voter]}>\n`;
+results+=`<@${voter}> → <@${state.votes[voter]}>\n`;
 }
 
 if(voted===state.impostor){
@@ -351,6 +354,6 @@ Real impostor: <@${state.impostor}>`
 
 }
 
-games.delete(state.channelId);
+games.delete(interaction.channel.parentId || interaction.channel.id);
 
 }
