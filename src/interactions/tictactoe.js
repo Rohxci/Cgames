@@ -8,52 +8,56 @@ const createEmbed = require("../utils/embed");
 const games = require("../systems/games");
 const { lockChannel, unlockChannel } = require("../systems/channelLock");
 
-function checkWin(board) {
+function checkWin(board){
 
 const lines = [
 [board[0][0],board[0][1],board[0][2]],
 [board[1][0],board[1][1],board[1][2]],
 [board[2][0],board[2][1],board[2][2]],
-
 [board[0][0],board[1][0],board[2][0]],
 [board[0][1],board[1][1],board[2][1]],
 [board[0][2],board[1][2],board[2][2]],
-
 [board[0][0],board[1][1],board[2][2]],
 [board[0][2],board[1][1],board[2][0]]
 ];
 
-for (const line of lines) {
-if (line.every(cell => cell === "❌")) return "❌";
-if (line.every(cell => cell === "⭕")) return "⭕";
+for(const line of lines){
+if(line.every(c=>c==="❌")) return "❌";
+if(line.every(c=>c==="⭕")) return "⭕";
 }
 
 return null;
+
 }
 
-function checkDraw(board) {
-return board.flat().every(cell => cell !== "⬜");
+function checkDraw(board){
+return board.flat().every(c=>c!=="⬜");
 }
 
-function buildBoardRows(board, disabledMode = "auto") {
+function buildBoardRows(board,disabledMode="auto"){
+
 return board.map((row,i)=>
 new ActionRowBuilder().addComponents(
-row.map((cell,j)=> {
-const b = new ButtonBuilder()
+row.map((cell,j)=>{
+
+const b=new ButtonBuilder()
 .setCustomId(`ttt_${i}_${j}`)
 .setLabel(cell)
 .setStyle(ButtonStyle.Secondary);
 
-if (disabledMode === "all") b.setDisabled(true);
-else if (disabledMode === "auto") b.setDisabled(cell !== "⬜");
+if(disabledMode==="all") b.setDisabled(true);
+else if(disabledMode==="auto") b.setDisabled(cell!=="⬜");
 
 return b;
+
 })
 )
 );
+
 }
 
-function buildEndRow(disabled = false) {
+function buildEndRow(disabled=false){
+
 return new ActionRowBuilder().addComponents(
 new ButtonBuilder()
 .setCustomId("ttt_end")
@@ -61,39 +65,44 @@ new ButtonBuilder()
 .setStyle(ButtonStyle.Danger)
 .setDisabled(disabled)
 );
+
 }
 
-module.exports = {
+module.exports={
 
-match(interaction) {
-if (!interaction.isButton()) return false;
-const id = interaction.customId;
-return id === "ttt_end"
+match(interaction){
+
+if(!interaction.isButton()) return false;
+
+const id=interaction.customId;
+
+return id==="ttt_end"
 || id.startsWith("ttt_accept_")
 || id.startsWith("ttt_decline_")
 || /^ttt_[0-2]_[0-2]$/.test(id);
+
 },
 
-async run(interaction) {
+async run(interaction){
 
-const id = interaction.customId;
+const id=interaction.customId;
 
 /* ACCEPT */
 
-if (id.startsWith("ttt_accept_")) {
+if(id.startsWith("ttt_accept_")){
 
-const parts = id.split("_");
-const challenger = parts[2];
-const opponent = parts[3];
+const parts=id.split("_");
+const challenger=parts[2];
+const opponent=parts[3];
 
-if (interaction.user.id !== opponent) {
+if(interaction.user.id!==opponent){
 return interaction.reply({
 content:"Only the challenged player can accept.",
 ephemeral:true
 });
 }
 
-const board = [
+const board=[
 ["⬜","⬜","⬜"],
 ["⬜","⬜","⬜"],
 ["⬜","⬜","⬜"]
@@ -106,32 +115,37 @@ turn:challenger,
 board
 });
 
-/* LOCK CHANNEL */
-
-const game = games.get(interaction.channelId);
-game.originalChannelName = await lockChannel(interaction.channel,[challenger,opponent]);
-
-const embed = createEmbed(
+const embed=createEmbed(
 "🎮 TicTacToe",
 `<@${challenger}> vs <@${opponent}>\n\nTurn: <@${challenger}>`
 );
 
 await interaction.update({
 embeds:[embed],
-components:[...buildBoardRows(board,"auto"), buildEndRow(false)]
+components:[...buildBoardRows(board,"auto"),buildEndRow(false)]
 });
 
+/* LOCK CHANNEL AFTER RESPONSE */
+
+const game=games.get(interaction.channelId);
+
+game.originalChannelName=await lockChannel(
+interaction.channel,
+[challenger,opponent]
+);
+
 return;
+
 }
 
 /* DECLINE */
 
-if (id.startsWith("ttt_decline_")) {
+if(id.startsWith("ttt_decline_")){
 
-const parts = id.split("_");
-const opponent = parts[3];
+const parts=id.split("_");
+const opponent=parts[3];
 
-if (interaction.user.id !== opponent) {
+if(interaction.user.id!==opponent){
 return interaction.reply({
 content:"Only the challenged player can decline.",
 ephemeral:true
@@ -144,110 +158,113 @@ components:[]
 });
 
 return;
+
 }
 
 /* END GAME */
 
-if (id === "ttt_end") {
+if(id==="ttt_end"){
 
-const game = games.get(interaction.channelId);
-if (!game) return;
+const game=games.get(interaction.channelId);
+if(!game) return;
 
-if (interaction.user.id !== game.player1 && interaction.user.id !== game.player2) {
+if(interaction.user.id!==game.player1 && interaction.user.id!==game.player2){
 return interaction.reply({
-content:"Only the players in this match can end the game.",
+content:"Only the players can end the game.",
 ephemeral:true
 });
 }
 
-const endedBy = interaction.user.id;
-const locked = buildBoardRows(game.board,"all");
+const endedBy=interaction.user.id;
 
-await unlockChannel(interaction.channel, game.originalChannelName);
+await unlockChannel(interaction.channel,game.originalChannelName);
 
 games.delete(interaction.channelId);
 
 await interaction.update({
 embeds:[createEmbed("🛑 TicTacToe",`Game ended by <@${endedBy}>.`)],
-components:[...locked, buildEndRow(true)]
+components:[]
 });
 
 return;
+
 }
 
-/* GRID CLICK */
+/* GRID */
 
-if (/^ttt_[0-2]_[0-2]$/.test(id)) {
+if(/^ttt_[0-2]_[0-2]$/.test(id)){
 
-const game = games.get(interaction.channelId);
-if (!game) return;
+const game=games.get(interaction.channelId);
+if(!game) return;
 
-const [_,row,col] = id.split("_");
+const [_,row,col]=id.split("_");
 
-if (interaction.user.id !== game.turn) {
-return interaction.reply({ content:"Not your turn.", ephemeral:true });
+if(interaction.user.id!==game.turn){
+return interaction.reply({content:"Not your turn.",ephemeral:true});
 }
 
-if (game.board[row][col] !== "⬜") {
-return interaction.reply({ content:"Position already taken.", ephemeral:true });
+if(game.board[row][col]!=="⬜"){
+return interaction.reply({content:"Position taken.",ephemeral:true});
 }
 
-const symbol = interaction.user.id === game.player1 ? "❌" : "⭕";
-game.board[row][col] = symbol;
+const symbol=interaction.user.id===game.player1?"❌":"⭕";
+
+game.board[row][col]=symbol;
 
 /* WIN */
 
-const winner = checkWin(game.board);
-if (winner) {
+const winner=checkWin(game.board);
 
-const winnerId = winner === "❌" ? game.player1 : game.player2;
-const locked = buildBoardRows(game.board,"all");
+if(winner){
 
-await unlockChannel(interaction.channel, game.originalChannelName);
+const winnerId=winner==="❌"?game.player1:game.player2;
+
+await unlockChannel(interaction.channel,game.originalChannelName);
 
 games.delete(interaction.channelId);
 
 await interaction.update({
 embeds:[createEmbed("🏆 TicTacToe",`Winner: <@${winnerId}> 🎉`)],
-components:[...locked, buildEndRow(true)]
+components:[]
 });
 
 return;
+
 }
 
 /* DRAW */
 
-if (checkDraw(game.board)) {
+if(checkDraw(game.board)){
 
-const locked = buildBoardRows(game.board,"all");
-
-await unlockChannel(interaction.channel, game.originalChannelName);
+await unlockChannel(interaction.channel,game.originalChannelName);
 
 games.delete(interaction.channelId);
 
 await interaction.update({
 embeds:[createEmbed("🤝 TicTacToe","It's a draw!")],
-components:[...locked, buildEndRow(true)]
+components:[]
 });
 
 return;
+
 }
 
 /* NEXT TURN */
 
-game.turn = interaction.user.id === game.player1 ? game.player2 : game.player1;
+game.turn=interaction.user.id===game.player1?game.player2:game.player1;
 
-const embed = createEmbed(
+const embed=createEmbed(
 "🎮 TicTacToe",
 `<@${game.player1}> vs <@${game.player2}>\n\nTurn: <@${game.turn}>`
 );
 
 await interaction.update({
 embeds:[embed],
-components:[...buildBoardRows(game.board,"auto"), buildEndRow(false)]
+components:[...buildBoardRows(game.board,"auto"),buildEndRow(false)]
 });
 
 return;
+
 }
 
 }
