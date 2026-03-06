@@ -14,7 +14,7 @@ const MIN_PLAYERS = 2;
 const TURN_TIMEOUT_MS = 20000;
 const CHALLENGE_TIMEOUT_MS = 7000;
 
-/* ---------------- EVENT POOL ---------------- */
+/* ---------------- EVENTS ---------------- */
 
 const ECONOMY_EVENTS = [
   "Small Win",
@@ -137,7 +137,7 @@ const EMOJI_MEMORY_POOL = [
   }
 ];
 
-/* ---------------- HELPERS ---------------- */
+/* ---------------- BASIC HELPERS ---------------- */
 
 function rand(min, max) {
   return Math.floor(Math.random() * (max - min + 1)) + min;
@@ -158,10 +158,38 @@ function findGame(channel) {
   return null;
 }
 
-function wheelText() {
-  const eco = ECONOMY_EVENTS.map((e, i) => `${i + 1} ${EMOJI[e]} ${e}`).join("\n");
-  const challenges = CHALLENGE_EVENTS.map((e, i) => `${i + 11} ${EMOJI[e]} ${e}`).join("\n");
-  return `💰 **Economy**\n${eco}\n\n🎮 **Challenges**\n${challenges}`;
+function isChallengeEvent(event) {
+  return CHALLENGE_EVENTS.includes(event);
+}
+
+function currentTurnPlayer(state) {
+  return state.alive[state.turn];
+}
+
+function randomAliveExcept(state, playerId) {
+  const others = state.alive.filter(id => id !== playerId);
+  if (!others.length) return null;
+  return others[rand(0, others.length - 1)];
+}
+
+function clampFish(state) {
+  for (const id of Object.keys(state.fish)) {
+    if (state.fish[id] < 0) state.fish[id] = 0;
+  }
+}
+
+function eliminatePlayers(state) {
+  const removed = [];
+
+  for (const id of [...state.alive]) {
+    if ((state.fish[id] || 0) <= 0) {
+      removed.push(id);
+    }
+  }
+
+  state.alive = state.alive.filter(id => (state.fish[id] || 0) > 0);
+
+  return removed;
 }
 
 function leaderboard(state) {
@@ -178,8 +206,15 @@ function leaderboard(state) {
   }).join("\n");
 }
 
+function wheelText() {
+  const economy = ECONOMY_EVENTS.map((e, i) => `${i + 1} ${EMOJI[e]} ${e}`).join("\n");
+  const challenges = CHALLENGE_EVENTS.map((e, i) => `${i + 11} ${EMOJI[e]} ${e}`).join("\n");
+
+  return `💰 **Economy**\n${economy}\n\n🎮 **Challenges**\n${challenges}`;
+}
+
 function lobbyEmbed(state) {
-  const players = state.players.map(p => `• <@${p}>`).join("\n") || "No players";
+  const players = state.players.map(id => `• <@${id}>`).join("\n") || "No players";
 
   return {
     title: "🎰 CASINO WHEEL",
@@ -221,6 +256,15 @@ ${eventText}`
   };
 }
 
+function challengeEmbed(title, description) {
+  return {
+    title,
+    description
+  };
+}
+
+/* ---------------- COMPONENT ROWS ---------------- */
+
 function lobbyRows() {
   return [
     new ActionRowBuilder().addComponents(
@@ -252,7 +296,6 @@ function lobbyRows() {
 }
 
 function panelRows(state) {
-  const disabled = state.phase !== "spin";
   return [
     new ActionRowBuilder().addComponents(
       new ButtonBuilder()
@@ -260,7 +303,7 @@ function panelRows(state) {
         .setLabel("SPIN")
         .setEmoji("🎡")
         .setStyle(ButtonStyle.Primary)
-        .setDisabled(disabled),
+        .setDisabled(state.phase !== "spin"),
 
       new ButtonBuilder()
         .setCustomId("casino_end")
@@ -299,23 +342,6 @@ function rpsRows() {
   ];
 }
 
-function rollRows(labelA = "Roll") {
-  return [
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("casino_roll").setLabel(labelA).setEmoji("🎲").setStyle(ButtonStyle.Primary)
-    )
-  ];
-}
-
-function coinRows() {
-  return [
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId("casino_coin_heads").setLabel("Heads").setEmoji("🪙").setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId("casino_coin_tails").setLabel("Tails").setEmoji("🪙").setStyle(ButtonStyle.Primary)
-    )
-  ];
-}
-
 function reactionRows(enabled) {
   return [
     new ActionRowBuilder().addComponents(
@@ -329,49 +355,23 @@ function reactionRows(enabled) {
   ];
 }
 
-function chooseNumberRow(customId, max) {
+function rollRows(label = "Roll") {
   return [
     new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId(customId)
-        .setPlaceholder("Choose a number")
-        .addOptions(Array.from({ length: max }, (_, i) => ({
-          label: String(i + 1),
-          value: String(i + 1)
-        })))
+      new ButtonBuilder()
+        .setCustomId("casino_roll")
+        .setLabel(label)
+        .setEmoji("🎲")
+        .setStyle(ButtonStyle.Primary)
     )
   ];
 }
 
-function targetRow(customId, state, actorId) {
-  const options = state.alive
-    .filter(id => id !== actorId)
-    .slice(0, 25)
-    .map(id => ({
-      label: `Target ${id.slice(0, 4)}`,
-      value: id,
-      description: `${state.fish[id]} fish`
-    }));
-
+function coinRows() {
   return [
     new ActionRowBuilder().addComponents(
-      new StringSelectMenuBuilder()
-        .setCustomId(customId)
-        .setPlaceholder("Choose target")
-        .addOptions(options)
-    )
-  ];
-}
-
-function quizRows(customId, options) {
-  return [
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`${customId}_0`).setLabel(options[0]).setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId(`${customId}_1`).setLabel(options[1]).setStyle(ButtonStyle.Primary)
-    ),
-    new ActionRowBuilder().addComponents(
-      new ButtonBuilder().setCustomId(`${customId}_2`).setLabel(options[2]).setStyle(ButtonStyle.Primary),
-      new ButtonBuilder().setCustomId(`${customId}_3`).setLabel(options[3]).setStyle(ButtonStyle.Primary)
+      new ButtonBuilder().setCustomId("casino_coin_heads").setLabel("Heads").setEmoji("🪙").setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId("casino_coin_tails").setLabel("Tails").setEmoji("🪙").setStyle(ButtonStyle.Primary)
     )
   ];
 }
@@ -394,11 +394,67 @@ function allInRows() {
   ];
 }
 
+function amountRows(label1 = "1", label2 = "2") {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("casino_amount_1").setLabel(label1).setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId("casino_amount_2").setLabel(label2).setStyle(ButtonStyle.Primary)
+    )
+  ];
+}
+
+function pickRows(customId, max) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId(customId)
+        .setPlaceholder("Choose a number")
+        .addOptions(Array.from({ length: max }, (_, i) => ({
+          label: String(i + 1),
+          value: String(i + 1)
+        })))
+    )
+  ];
+}
+
+function targetRows(state, actorId) {
+  const options = state.alive
+    .filter(id => id !== actorId)
+    .slice(0, 25)
+    .map(id => ({
+      label: `Target ${id.slice(0, 4)}`,
+      value: id,
+      description: `${state.fish[id]} fish`
+    }));
+
+  return [
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId("casino_target")
+        .setPlaceholder("Choose target")
+        .addOptions(options)
+    )
+  ];
+}
+
+function quizRows(options) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("casino_quiz_0").setLabel(options[0]).setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId("casino_quiz_1").setLabel(options[1]).setStyle(ButtonStyle.Primary)
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder().setCustomId("casino_quiz_2").setLabel(options[2]).setStyle(ButtonStyle.Primary),
+      new ButtonBuilder().setCustomId("casino_quiz_3").setLabel(options[3]).setStyle(ButtonStyle.Primary)
+    )
+  ];
+}
+
 function bjRows(state) {
-  const actor = state.challenge.actor;
-  const current = state.challenge.data.current;
-  const standMap = state.challenge.data.stood || {};
-  const canPlay = actor === current && !standMap[current];
+  const data = state.challenge.data;
+  const current = data.current;
+  const stood = data.stood || {};
+  const canPlay = !stood[current];
 
   return [
     new ActionRowBuilder().addComponents(
@@ -406,6 +462,83 @@ function bjRows(state) {
       new ButtonBuilder().setCustomId("casino_bj_stand").setLabel("Stand").setStyle(ButtonStyle.Success).setDisabled(!canPlay)
     )
   ];
+}
+
+/* ---------------- FETCH/UPDATE HELPERS ---------------- */
+
+async function getThread(client, state) {
+  return client.channels.cache.get(state.threadId) || await client.channels.fetch(state.threadId).catch(() => null);
+}
+
+async function getPanel(client, state) {
+  const thread = await getThread(client, state);
+  if (!thread) return null;
+  return await thread.messages.fetch(state.panelMessageId).catch(() => null);
+}
+
+async function getChallengeMessage(client, state) {
+  const thread = await getThread(client, state);
+  if (!thread || !state.challengeMessageId) return null;
+  return await thread.messages.fetch(state.challengeMessageId).catch(() => null);
+}
+
+async function updatePanel(client, state, text) {
+  const panel = await getPanel(client, state);
+  if (!panel) return false;
+
+  await panel.edit({
+    embeds: [panelEmbed(state, text)],
+    components: panelRows(state)
+  }).catch(() => {});
+
+  return true;
+}
+
+async function sendMainResult(client, state, text) {
+  const main =
+    client.channels.cache.get(state.mainChannelId) ||
+    await client.channels.fetch(state.mainChannelId).catch(() => null);
+
+  if (!main) return;
+  await main.send(text).catch(() => {});
+}
+
+/* ---------------- TIMERS ---------------- */
+
+function clearTurnTimer(state) {
+  if (state.turnTimer) {
+    clearTimeout(state.turnTimer);
+    state.turnTimer = null;
+  }
+}
+
+function clearChallengeTimer(state) {
+  if (state.challengeTimer) {
+    clearTimeout(state.challengeTimer);
+    state.challengeTimer = null;
+  }
+}
+
+function startTurnTimer(client, state) {
+  clearTurnTimer(state);
+
+  if (state.phase !== "spin") return;
+
+  state.turnToken = (state.turnToken || 0) + 1;
+  const token = state.turnToken;
+
+  state.turnTimer = setTimeout(async () => {
+    if (state.phase !== "spin") return;
+    if (state.turnToken !== token) return;
+    await processSpin(client, state);
+  }, TURN_TIMEOUT_MS);
+}
+
+/* ---------------- CARD HELPERS ---------------- */
+
+function drawCard() {
+  const cards = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
+  return cards[rand(0, cards.length - 1)];
 }
 
 function cardValue(card) {
@@ -431,87 +564,11 @@ function handScore(hand) {
   return total;
 }
 
-function drawCard() {
-  const cards = ["A", "2", "3", "4", "5", "6", "7", "8", "9", "10", "J", "Q", "K"];
-  return cards[rand(0, cards.length - 1)];
-}
-
-function currentTurnPlayer(state) {
-  return state.alive[state.turn];
-}
-
-function clampFish(state) {
-  for (const id of Object.keys(state.fish)) {
-    if (state.fish[id] < 0) state.fish[id] = 0;
-  }
-}
-
-function eliminatePlayers(state) {
-  const removed = [];
-  for (const id of [...state.alive]) {
-    if ((state.fish[id] || 0) <= 0) removed.push(id);
-  }
-  state.alive = state.alive.filter(id => (state.fish[id] || 0) > 0);
-  return removed;
-}
-
-function setNextTurnAfterResolution(state, actingPlayerId, oldTurnIndex) {
-  if (state.alive.length === 0) return;
-
-  const idx = state.alive.indexOf(actingPlayerId);
-
-  if (idx !== -1) {
-    state.turn = idx + 1;
-    if (state.turn >= state.alive.length) state.turn = 0;
-  } else {
-    state.turn = oldTurnIndex;
-    if (state.turn >= state.alive.length) state.turn = 0;
-  }
-}
-
-function clearTurnTimer(state) {
-  if (state.turnTimer) {
-    clearTimeout(state.turnTimer);
-    state.turnTimer = null;
-  }
-}
-
-async function getThread(client, state) {
-  return client.channels.cache.get(state.threadId) || await client.channels.fetch(state.threadId).catch(() => null);
-}
-
-async function getPanel(client, state) {
-  const thread = await getThread(client, state);
-  if (!thread) return null;
-  return await thread.messages.fetch(state.panelMessageId).catch(() => null);
-}
-
-async function getChallengeMessage(client, state) {
-  const thread = await getThread(client, state);
-  if (!thread || !state.challengeMessageId) return null;
-  return await thread.messages.fetch(state.challengeMessageId).catch(() => null);
-}
-
-async function sendMainResult(client, state, text) {
-  const main = client.channels.cache.get(state.mainChannelId) || await client.channels.fetch(state.mainChannelId).catch(() => null);
-  if (!main) return;
-  await main.send(text).catch(() => {});
-}
-
-async function updatePanel(client, state, text) {
-  const panel = await getPanel(client, state);
-  if (!panel) return false;
-
-  await panel.edit({
-    embeds: [panelEmbed(state, text)],
-    components: panelRows(state)
-  }).catch(() => {});
-
-  return true;
-}
+/* ---------------- END/CLOSE ---------------- */
 
 async function closeCasino(client, state, finalText) {
   clearTurnTimer(state);
+  clearChallengeTimer(state);
 
   const panel = await getPanel(client, state);
   if (panel) {
@@ -534,106 +591,148 @@ async function closeCasino(client, state, finalText) {
   }
 }
 
-function startTurnTimer(client, state) {
-  clearTurnTimer(state);
+function setNextTurnAfterResolution(state, actingPlayerId, oldTurnIndex) {
+  if (!state.alive.length) return;
 
-  if (state.phase !== "spin") return;
+  const idx = state.alive.indexOf(actingPlayerId);
 
-  state.turnToken = (state.turnToken || 0) + 1;
-  const token = state.turnToken;
-
-  state.turnTimer = setTimeout(async () => {
-    if (state.phase !== "spin") return;
-    if (state.turnToken !== token) return;
-    await processSpin(client, state, true);
-  }, TURN_TIMEOUT_MS);
-}
-
-function randomAliveExcept(state, playerId) {
-  const others = state.alive.filter(id => id !== playerId);
-  if (others.length === 0) return null;
-  return others[rand(0, others.length - 1)];
-}
-
-function isChallengeEvent(event) {
-  return CHALLENGE_EVENTS.includes(event);
-}
-
-function createChallengeEmbed(state, title, description) {
-  return {
-    title,
-    description
-  };
+  if (idx !== -1) {
+    state.turn = idx + 1;
+    if (state.turn >= state.alive.length) state.turn = 0;
+  } else {
+    state.turn = oldTurnIndex;
+    if (state.turn >= state.alive.length) state.turn = 0;
+  }
 }
 
 async function maybeFinishAfterResolution(client, state, resultText, actingPlayerId, oldTurnIndex) {
   clampFish(state);
   const removed = eliminatePlayers(state);
 
-  let extra = resultText;
-  if (removed.length > 0) {
-    extra += `\n\n💀 Out:\n${removed.map(id => `<@${id}>`).join("\n")}`;
+  let finalResult = resultText;
+  if (removed.length) {
+    finalResult += `\n\n💀 Out:\n${removed.map(id => `<@${id}>`).join("\n")}`;
   }
 
   if (state.alive.length === 0) {
     await closeCasino(client, state, `🛑 Everyone was eliminated.\n\nWinner: none`);
-    return { done: true, result: extra };
+    return { done: true, result: finalResult };
   }
 
   if (state.alive.length === 1) {
     const winner = state.alive[0];
     await closeCasino(client, state, `🏆 <@${winner}> wins the casino!\n\nFinal Fish: ${state.fish[winner]} 🐟`);
-    return { done: true, result: extra };
+    return { done: true, result: finalResult };
   }
 
   setNextTurnAfterResolution(state, actingPlayerId, oldTurnIndex);
-
-  return { done: false, result: extra };
+  return { done: false, result: finalResult };
 }
 
-/* ---------------- CHALLENGE SETUP ---------------- */
+/* ---------------- ECONOMY EVENTS ---------------- */
+
+function runEconomyEvent(state, event) {
+  const player = currentTurnPlayer(state);
+
+  if (event === "Small Win") {
+    state.fish[player] += 2;
+    return `<@${player}> wins +2 🐟`;
+  }
+
+  if (event === "Big Win") {
+    state.fish[player] += 5;
+    return `<@${player}> wins +5 🐟`;
+  }
+
+  if (event === "Lose Fish") {
+    state.fish[player] -= 2;
+    return `<@${player}> loses 2 🐟`;
+  }
+
+  if (event === "Disaster") {
+    state.fish[player] -= 4;
+    return `<@${player}> loses 4 🐟`;
+  }
+
+  if (event === "Casino Tax") {
+    state.alive.forEach(id => { state.fish[id] -= 1; });
+    return `🏛️ Casino Tax!\nEveryone loses 1 🐟`;
+  }
+
+  if (event === "Charity") {
+    state.alive.forEach(id => { state.fish[id] += 1; });
+    return `🎁 Charity!\nEveryone gains 1 🐟`;
+  }
+
+  if (event === "Fish Rain") {
+    state.alive.forEach(id => { state.fish[id] += 2; });
+    return `🐟 Fish Rain!\nEveryone gains 2 🐟`;
+  }
+
+  if (event === "Fish Storm") {
+    state.alive.forEach(id => { state.fish[id] -= 2; });
+    return `🌪️ Fish Storm!\nEveryone loses 2 🐟`;
+  }
+
+  if (event === "Lucky Player") {
+    const target = state.alive[rand(0, state.alive.length - 1)];
+    state.fish[target] += 3;
+    return `🍀 Lucky Player!\n<@${target}> gains 3 🐟`;
+  }
+
+  if (event === "Bomb") {
+    const target = state.alive[rand(0, state.alive.length - 1)];
+    state.fish[target] -= 3;
+    return `💣 Bomb!\n<@${target}> loses 3 🐟`;
+  }
+
+  return null;
+}
+
+/* ---------------- CHALLENGE CREATION ---------------- */
 
 function buildChallenge(state, event) {
   const actor = currentTurnPlayer(state);
   const oldTurnIndex = state.turn;
 
-  if (["Dice Duel", "Rock Paper Scissors", "Reaction Duel", "Math Duel", "High Card Duel", "Coin Flip Duel", "Fast Type", "Trivia", "Word Scramble", "Quick Click", "Emoji Memory", "Blackjack"].includes(event)) {
-    const target = randomAliveExcept(state, actor);
-    if (!target) return null;
+  const versusEvents = [
+    "Dice Duel",
+    "Rock Paper Scissors",
+    "Reaction Duel",
+    "Math Duel",
+    "High Card Duel",
+    "Coin Flip Duel",
+    "Lucky Pick",
+    "Risk Choice",
+    "All In",
+    "Pick a Number",
+    "Safe or Risk",
+    "Fast Type",
+    "Trivia",
+    "Word Scramble",
+    "Quick Click",
+    "Emoji Memory",
+    "Guess Number",
+    "Steal",
+    "Gift",
+    "Blackjack"
+  ];
 
-    return {
-      event,
-      actor,
-      players: [actor, target],
-      accepted: {},
-      stage: "accept",
-      data: { oldTurnIndex }
-    };
-  }
+  if (!versusEvents.includes(event)) return null;
 
-  if (["Steal", "Gift"].includes(event)) {
-    return {
-      event,
-      actor,
-      players: [actor],
-      accepted: {},
-      stage: "select-target",
-      data: { oldTurnIndex }
-    };
-  }
+  const target = randomAliveExcept(state, actor);
+  if (!target) return null;
 
-  if (["Lucky Pick", "Risk Choice", "All In", "Pick a Number", "Safe or Risk", "Guess Number"].includes(event)) {
-    return {
-      event,
-      actor,
-      players: [actor],
-      accepted: { [actor]: true },
-      stage: "play",
-      data: { oldTurnIndex }
-    };
-  }
-
-  return null;
+  return {
+    event,
+    actor,
+    players: [actor, target],
+    accepted: {},
+    stage: "accept",
+    data: {
+      oldTurnIndex
+    }
+  };
 }
 
 async function openChallenge(client, state, event) {
@@ -648,181 +747,292 @@ async function openChallenge(client, state, event) {
   state.phase = "challenge";
   state.challenge = challenge;
 
-  let embed;
-  let rows = [];
-
-  if (challenge.stage === "accept") {
-    embed = createChallengeEmbed(
-      `${EMOJI[event] || "🎮"} CASINO CHALLENGE`,
-      `<@${challenge.players[0]}> vs <@${challenge.players[1]}>\n\nEvent: **${event}**\n\nBoth players must accept to begin.`
-    );
-    rows = challengeAcceptRows();
-  } else if (challenge.stage === "select-target") {
-    embed = createChallengeEmbed(
-      `${EMOJI[event] || "🎮"} CASINO CHALLENGE`,
-      `<@${challenge.actor}> must choose a target for **${event}**.`
-    );
-    rows = targetRow("casino_target", state, challenge.actor);
-  } else {
-    embed = createChallengeEmbed(
-      `${EMOJI[event] || "🎮"} CASINO CHALLENGE`,
-      `<@${challenge.actor}> begins **${event}**.`
-    );
-    rows = await challengePlayRows(state);
-  }
-
   const msg = await thread.send({
-    embeds: [embed],
-    components: rows
+    embeds: [challengeEmbed(
+      `${EMOJI[event]} CASINO CHALLENGE`,
+      `<@${challenge.players[0]}> vs <@${challenge.players[1]}>\n\nEvent: **${event}**\n\nBoth players must accept to begin.`
+    )],
+    components: challengeAcceptRows()
   });
 
   state.challengeMessageId = msg.id;
 
-  await updatePanel(client, state, `${EMOJI[event] || "🎮"} ${event}\n\nWaiting for challenge...`);
+  await updatePanel(client, state, `${EMOJI[event]} ${event}\n\nWaiting for challenge...`);
   return true;
 }
 
-async function challengePlayRows(state) {
-  const event = state.challenge.event;
-
-  if (event === "Rock Paper Scissors") return rpsRows();
-  if (event === "Dice Duel") return rollRows("Roll");
-  if (event === "High Card Duel") return rollRows("Draw Card");
-  if (event === "Coin Flip Duel") return coinRows();
-  if (event === "Reaction Duel" || event === "Quick Click" || event === "Fast Type") return reactionRows(false);
-  if (event === "Lucky Pick") return chooseNumberRow("casino_pick10", 10);
-  if (event === "Pick a Number" || event === "Guess Number") return chooseNumberRow("casino_pick5", 5);
-  if (event === "Risk Choice" || event === "Safe or Risk") return riskRows();
-  if (event === "All In") return allInRows();
-  if (event === "Steal" || event === "Gift") return [];
-  if (event === "Math Duel") {
-    const a = rand(5, 25);
-    const b = rand(5, 25);
-    const correct = a + b;
-    const wrong = shuffle([correct + 1, correct - 1, correct + 2]).slice(0, 3);
-    const options = shuffle([correct, ...wrong]).slice(0, 4);
-    state.challenge.data.question = `${a} + ${b} = ?`;
-    state.challenge.data.answer = options.indexOf(correct);
-    state.challenge.data.answered = {};
-    return quizRows("casino_quiz", options.map(String));
-  }
-  if (event === "Trivia") {
-    const q = TRIVIA_POOL[rand(0, TRIVIA_POOL.length - 1)];
-    state.challenge.data.question = q.q;
-    state.challenge.data.answer = q.answer;
-    state.challenge.data.answered = {};
-    return quizRows("casino_quiz", q.options);
-  }
-  if (event === "Word Scramble") {
-    const q = SCRAMBLE_POOL[rand(0, SCRAMBLE_POOL.length - 1)];
-    state.challenge.data.question = q.q;
-    state.challenge.data.answer = q.answer;
-    state.challenge.data.answered = {};
-    return quizRows("casino_quiz", q.options);
-  }
-  if (event === "Emoji Memory") {
-    const q = EMOJI_MEMORY_POOL[rand(0, EMOJI_MEMORY_POOL.length - 1)];
-    state.challenge.data.question = q.q;
-    state.challenge.data.answer = q.answer;
-    state.challenge.data.answered = {};
-    return quizRows("casino_quiz", q.options);
-  }
-  if (event === "Blackjack") {
-    const [a, b] = state.challenge.players;
-    state.challenge.data.hands = {
-      [a]: [drawCard(), drawCard()],
-      [b]: [drawCard(), drawCard()]
-    };
-    state.challenge.data.stood = {};
-    state.challenge.data.current = a;
-    return bjRows(state);
-  }
-
-  return [];
-}
+/* ---------------- CHALLENGE PLAY START ---------------- */
 
 async function beginChallengeGameplay(client, state) {
-  const challengeMsg = await getChallengeMessage(client, state);
-  if (!challengeMsg) return;
+  const msg = await getChallengeMessage(client, state);
+  if (!msg || !state.challenge) return;
 
   state.challenge.stage = "play";
+  const event = state.challenge.event;
+  const [a, b] = state.challenge.players;
 
-  if (["Reaction Duel", "Quick Click", "Fast Type"].includes(state.challenge.event)) {
-    await challengeMsg.edit({
-      embeds: [createChallengeEmbed(
-        `${EMOJI[state.challenge.event]} ${state.challenge.event}`,
-        `<@${state.challenge.players[0]}> vs <@${state.challenge.players[1]}>\n\nWAIT...`
+  if (["Reaction Duel", "Quick Click", "Fast Type"].includes(event)) {
+    await msg.edit({
+      embeds: [challengeEmbed(
+        `${EMOJI[event]} ${event}`,
+        `<@${a}> vs <@${b}>\n\nWAIT...`
       )],
       components: reactionRows(false)
-    });
+    }).catch(() => {});
 
-    state.challenge.timeout = setTimeout(async () => {
-      const msg = await getChallengeMessage(client, state);
-      if (!msg || !state.challenge) return;
+    clearChallengeTimer(state);
+    state.challengeTimer = setTimeout(async () => {
+      if (!state.challenge) return;
       state.challenge.stage = "armed";
 
-      await msg.edit({
-        embeds: [createChallengeEmbed(
-          `${EMOJI[state.challenge.event]} ${state.challenge.event}`,
-          `<@${state.challenge.players[0]}> vs <@${state.challenge.players[1]}>\n\nCLICK NOW!`
+      const armedMsg = await getChallengeMessage(client, state);
+      if (!armedMsg) return;
+
+      await armedMsg.edit({
+        embeds: [challengeEmbed(
+          `${EMOJI[event]} ${event}`,
+          `<@${a}> vs <@${b}>\n\nCLICK NOW!`
         )],
         components: reactionRows(true)
-      });
+      }).catch(() => {});
 
-      state.challenge.timeout = setTimeout(async () => {
+      clearChallengeTimer(state);
+      state.challengeTimer = setTimeout(async () => {
         if (!state.challenge) return;
-        await finishChallenge(client, state, `No one reacted in time. No fish changed.`);
+        await finishChallenge(client, state, `${EMOJI[event]} ${event}\n\nNo one reacted in time. No fish changed.`);
       }, CHALLENGE_TIMEOUT_MS);
     }, rand(1500, 3500));
 
     return;
   }
 
-  const rows = await challengePlayRows(state);
-  let description = `<@${state.challenge.players[0]}>`;
-  if (state.challenge.players[1]) description += ` vs <@${state.challenge.players[1]}>`;
-  description += `\n\n`;
-
-  if (state.challenge.event === "Math Duel" || state.challenge.event === "Trivia" || state.challenge.event === "Word Scramble" || state.challenge.event === "Emoji Memory") {
-    description += state.challenge.data.question;
-  } else if (state.challenge.event === "Blackjack") {
-    const [a, b] = state.challenge.players;
-    const hands = state.challenge.data.hands;
-    description += `<@${a}> — ${hands[a].join(" ")} (${handScore(hands[a])})\n`;
-    description += `<@${b}> — ${hands[b].join(" ")} (${handScore(hands[b])})\n\n`;
-    description += `Turn: <@${state.challenge.data.current}>`;
-  } else {
-    description += `Play the challenge now.`;
+  if (event === "Rock Paper Scissors") {
+    await msg.edit({
+      embeds: [challengeEmbed(
+        `${EMOJI[event]} ${event}`,
+        `<@${a}> vs <@${b}>\n\nChoose your move.`
+      )],
+      components: rpsRows()
+    }).catch(() => {});
+    return;
   }
 
-  await challengeMsg.edit({
-    embeds: [createChallengeEmbed(
-      `${EMOJI[state.challenge.event]} ${state.challenge.event}`,
-      description
-    )],
-    components: rows
-  });
+  if (event === "Dice Duel") {
+    state.challenge.data.rolls = {};
+    await msg.edit({
+      embeds: [challengeEmbed(
+        `${EMOJI[event]} ${event}`,
+        `<@${a}> vs <@${b}>\n\nBoth players must roll.`
+      )],
+      components: rollRows("Roll")
+    }).catch(() => {});
+    return;
+  }
 
-  if (["Math Duel", "Trivia", "Word Scramble", "Emoji Memory"].includes(state.challenge.event)) {
-    state.challenge.timeout = setTimeout(async () => {
+  if (event === "High Card Duel") {
+    state.challenge.data.rolls = {};
+    await msg.edit({
+      embeds: [challengeEmbed(
+        `${EMOJI[event]} ${event}`,
+        `<@${a}> vs <@${b}>\n\nBoth players draw a card.`
+      )],
+      components: rollRows("Draw Card")
+    }).catch(() => {});
+    return;
+  }
+
+  if (event === "Coin Flip Duel") {
+    state.challenge.data.coinChoices = {};
+    await msg.edit({
+      embeds: [challengeEmbed(
+        `${EMOJI[event]} ${event}`,
+        `<@${a}> vs <@${b}>\n\nChoose Heads or Tails.`
+      )],
+      components: coinRows()
+    }).catch(() => {});
+    return;
+  }
+
+  if (event === "Lucky Pick") {
+    state.challenge.data.picks = {};
+    await msg.edit({
+      embeds: [challengeEmbed(
+        `${EMOJI[event]} ${event}`,
+        `<@${a}> vs <@${b}>\n\nBoth players choose a number from 1 to 10. Closest to the hidden target wins.`
+      )],
+      components: pickRows("casino_pick10", 10)
+    }).catch(() => {});
+    return;
+  }
+
+  if (event === "Pick a Number" || event === "Guess Number") {
+    state.challenge.data.picks = {};
+    await msg.edit({
+      embeds: [challengeEmbed(
+        `${EMOJI[event]} ${event}`,
+        `<@${a}> vs <@${b}>\n\nBoth players choose a number from 1 to 5.`
+      )],
+      components: pickRows("casino_pick5", 5)
+    }).catch(() => {});
+    return;
+  }
+
+  if (event === "Risk Choice" || event === "Safe or Risk") {
+    state.challenge.data.choices = {};
+    await msg.edit({
+      embeds: [challengeEmbed(
+        `${EMOJI[event]} ${event}`,
+        `<@${a}> vs <@${b}>\n\nBoth players choose Safe or Risk.`
+      )],
+      components: riskRows()
+    }).catch(() => {});
+    return;
+  }
+
+  if (event === "All In") {
+    state.challenge.data.choices = {};
+    await msg.edit({
+      embeds: [challengeEmbed(
+        `${EMOJI[event]} ${event}`,
+        `<@${a}> vs <@${b}>\n\nBoth players decide whether to go all in.`
+      )],
+      components: allInRows()
+    }).catch(() => {});
+    return;
+  }
+
+  if (event === "Steal" || event === "Gift") {
+    await msg.edit({
+      embeds: [challengeEmbed(
+        `${EMOJI[event]} ${event}`,
+        `<@${a}> vs <@${b}>\n\n<@${a}> chooses the amount.`
+      )],
+      components: amountRows("1 Fish", "2 Fish")
+    }).catch(() => {});
+    return;
+  }
+
+  if (event === "Math Duel") {
+    const x = rand(5, 25);
+    const y = rand(5, 25);
+    const correct = x + y;
+    const wrong = shuffle([correct + 1, correct - 1, correct + 2]).slice(0, 3);
+    const options = shuffle([correct, ...wrong]).slice(0, 4);
+
+    state.challenge.data.answer = options.indexOf(correct);
+    state.challenge.data.answered = {};
+
+    await msg.edit({
+      embeds: [challengeEmbed(
+        `${EMOJI[event]} ${event}`,
+        `<@${a}> vs <@${b}>\n\n${x} + ${y} = ?`
+      )],
+      components: quizRows(options.map(String))
+    }).catch(() => {});
+
+    clearChallengeTimer(state);
+    state.challengeTimer = setTimeout(async () => {
       if (!state.challenge) return;
-      await finishChallenge(client, state, `${EMOJI[state.challenge.event]} ${state.challenge.event}\n\nTime's up. No fish changed.`);
+      await finishChallenge(client, state, `${EMOJI[event]} ${event}\n\nTime's up. No fish changed.`);
     }, CHALLENGE_TIMEOUT_MS);
+    return;
+  }
+
+  if (event === "Trivia") {
+    const q = TRIVIA_POOL[rand(0, TRIVIA_POOL.length - 1)];
+    state.challenge.data.answer = q.answer;
+    state.challenge.data.answered = {};
+
+    await msg.edit({
+      embeds: [challengeEmbed(
+        `${EMOJI[event]} ${event}`,
+        `<@${a}> vs <@${b}>\n\n${q.q}`
+      )],
+      components: quizRows(q.options)
+    }).catch(() => {});
+
+    clearChallengeTimer(state);
+    state.challengeTimer = setTimeout(async () => {
+      if (!state.challenge) return;
+      await finishChallenge(client, state, `${EMOJI[event]} ${event}\n\nTime's up. No fish changed.`);
+    }, CHALLENGE_TIMEOUT_MS);
+    return;
+  }
+
+  if (event === "Word Scramble") {
+    const q = SCRAMBLE_POOL[rand(0, SCRAMBLE_POOL.length - 1)];
+    state.challenge.data.answer = q.answer;
+    state.challenge.data.answered = {};
+
+    await msg.edit({
+      embeds: [challengeEmbed(
+        `${EMOJI[event]} ${event}`,
+        `<@${a}> vs <@${b}>\n\n${q.q}`
+      )],
+      components: quizRows(q.options)
+    }).catch(() => {});
+
+    clearChallengeTimer(state);
+    state.challengeTimer = setTimeout(async () => {
+      if (!state.challenge) return;
+      await finishChallenge(client, state, `${EMOJI[event]} ${event}\n\nTime's up. No fish changed.`);
+    }, CHALLENGE_TIMEOUT_MS);
+    return;
+  }
+
+  if (event === "Emoji Memory") {
+    const q = EMOJI_MEMORY_POOL[rand(0, EMOJI_MEMORY_POOL.length - 1)];
+    state.challenge.data.answer = q.answer;
+    state.challenge.data.answered = {};
+
+    await msg.edit({
+      embeds: [challengeEmbed(
+        `${EMOJI[event]} ${event}`,
+        `<@${a}> vs <@${b}>\n\n${q.q}`
+      )],
+      components: quizRows(q.options)
+    }).catch(() => {});
+
+    clearChallengeTimer(state);
+    state.challengeTimer = setTimeout(async () => {
+      if (!state.challenge) return;
+      await finishChallenge(client, state, `${EMOJI[event]} ${event}\n\nTime's up. No fish changed.`);
+    }, CHALLENGE_TIMEOUT_MS);
+    return;
+  }
+
+  if (event === "Blackjack") {
+    state.challenge.data.hands = {
+      [a]: [drawCard(), drawCard()],
+      [b]: [drawCard(), drawCard()]
+    };
+    state.challenge.data.stood = {};
+    state.challenge.data.current = a;
+
+    await msg.edit({
+      embeds: [challengeEmbed(
+        `${EMOJI[event]} ${event}`,
+        `<@${a}> — ${state.challenge.data.hands[a].join(" ")} (${handScore(state.challenge.data.hands[a])})\n` +
+        `<@${b}> — ${state.challenge.data.hands[b].join(" ")} (${handScore(state.challenge.data.hands[b])})\n\n` +
+        `Turn: <@${state.challenge.data.current}>`
+      )],
+      components: bjRows(state)
+    }).catch(() => {});
+    return;
   }
 }
+
+/* ---------------- CHALLENGE FINISH ---------------- */
 
 async function finishChallenge(client, state, resultText) {
   if (!state.challenge) return;
 
-  if (state.challenge.timeout) {
-    clearTimeout(state.challenge.timeout);
-    state.challenge.timeout = null;
-  }
+  clearChallengeTimer(state);
 
-  const challengeMsg = await getChallengeMessage(client, state);
-  if (challengeMsg) {
-    await challengeMsg.edit({
-      embeds: [createChallengeEmbed("✅ Challenge Finished", resultText)],
+  const msg = await getChallengeMessage(client, state);
+  if (msg) {
+    await msg.edit({
+      embeds: [challengeEmbed("✅ Challenge Finished", resultText)],
       components: []
     }).catch(() => {});
   }
@@ -843,21 +1053,22 @@ async function finishChallenge(client, state, resultText) {
 
   await updatePanel(client, state, outcome.result);
 
-  if (challengeMsg) {
+  if (msg) {
     setTimeout(async () => {
-      await challengeMsg.delete().catch(() => {});
+      await msg.delete().catch(() => {});
     }, 1500);
   }
 
   startTurnTimer(client, state);
 }
 
-/* ---------------- MANUAL/AUTO SPIN ---------------- */
+/* ---------------- SPIN PROCESS ---------------- */
 
 async function processSpin(client, state) {
   if (state.phase !== "spin") return;
 
   const actingPlayer = currentTurnPlayer(state);
+  const oldTurnIndex = state.turn;
   const panel = await getPanel(client, state);
   if (!panel) {
     games.delete(state.mainChannelId);
@@ -885,19 +1096,28 @@ async function processSpin(client, state) {
   if (isChallengeEvent(event)) {
     const opened = await openChallenge(client, state, event);
     if (!opened) {
-      await updatePanel(client, state, `${EMOJI[event]} ${event}\n\nChallenge could not start.`);
-      setNextTurnAfterResolution(state, actingPlayer, state.turn);
-      startTurnTimer(client, state);
+      const fallback = `${EMOJI[event]} ${event}\n\nChallenge could not start.`;
+      const outcome = await maybeFinishAfterResolution(client, state, fallback, actingPlayer, oldTurnIndex);
+      if (!outcome.done) {
+        await updatePanel(client, state, outcome.result);
+        startTurnTimer(client, state);
+      }
     }
     return;
   }
 
-  let result = runEconomyEvent(state, event) || `🎲 Event triggered: ${event}`;
-  const oldTurnIndex = state.turn;
-  const outcome = await maybeFinishAfterResolution(client, state, result, actingPlayer, oldTurnIndex);
+  const result = runEconomyEvent(state, event) || `${EMOJI[event]} ${event}`;
+  const outcome = await maybeFinishAfterResolution(
+    client,
+    state,
+    `${EMOJI[event]} ${event}\n\n${result}`,
+    actingPlayer,
+    oldTurnIndex
+  );
+
   if (outcome.done) return;
 
-  await updatePanel(client, state, `${EMOJI[event]} ${event}\n\n${outcome.result}`);
+  await updatePanel(client, state, outcome.result);
   startTurnTimer(client, state);
 }
 
@@ -923,11 +1143,17 @@ module.exports = {
       if (state.phase !== "lobby") return;
 
       if (state.players.includes(interaction.user.id)) {
-        return interaction.reply({ content: "You already joined.", ephemeral: true });
+        return interaction.reply({
+          content: "You already joined.",
+          ephemeral: true
+        });
       }
 
       if (state.players.length >= MAX_PLAYERS) {
-        return interaction.reply({ content: "Lobby is full.", ephemeral: true });
+        return interaction.reply({
+          content: "Lobby is full.",
+          ephemeral: true
+        });
       }
 
       state.players.push(interaction.user.id);
@@ -936,6 +1162,7 @@ module.exports = {
         embeds: [lobbyEmbed(state)],
         components: lobbyRows()
       });
+
       return;
     }
 
@@ -943,14 +1170,21 @@ module.exports = {
       if (state.phase !== "lobby") return;
 
       if (!state.players.includes(interaction.user.id)) {
-        return interaction.reply({ content: "You are not in the lobby.", ephemeral: true });
+        return interaction.reply({
+          content: "You are not in the lobby.",
+          ephemeral: true
+        });
       }
 
-      state.players = state.players.filter(p => p !== interaction.user.id);
+      state.players = state.players.filter(id2 => id2 !== interaction.user.id);
 
-      if (state.players.length === 0) {
+      if (!state.players.length) {
         games.delete(interaction.channelId);
-        await interaction.update({ content: "❌ Casino cancelled.", embeds: [], components: [] });
+        await interaction.update({
+          content: "❌ Casino cancelled.",
+          embeds: [],
+          components: []
+        });
         return;
       }
 
@@ -962,6 +1196,7 @@ module.exports = {
         embeds: [lobbyEmbed(state)],
         components: lobbyRows()
       });
+
       return;
     }
 
@@ -969,7 +1204,10 @@ module.exports = {
       if (state.phase !== "lobby") return;
 
       if (interaction.user.id !== state.hostId) {
-        return interaction.reply({ content: "Only host can cancel.", ephemeral: true });
+        return interaction.reply({
+          content: "Only host can cancel.",
+          ephemeral: true
+        });
       }
 
       games.delete(interaction.channelId);
@@ -979,6 +1217,7 @@ module.exports = {
         embeds: [],
         components: []
       });
+
       return;
     }
 
@@ -986,11 +1225,17 @@ module.exports = {
       if (state.phase !== "lobby") return;
 
       if (interaction.user.id !== state.hostId) {
-        return interaction.reply({ content: "Only host can start.", ephemeral: true });
+        return interaction.reply({
+          content: "Only host can start.",
+          ephemeral: true
+        });
       }
 
       if (state.players.length < MIN_PLAYERS) {
-        return interaction.reply({ content: "Not enough players.", ephemeral: true });
+        return interaction.reply({
+          content: "Not enough players.",
+          ephemeral: true
+        });
       }
 
       state.phase = "spin";
@@ -998,12 +1243,12 @@ module.exports = {
       state.alive = [...state.players];
       state.turn = 0;
       state.fish = {};
+      state.turnToken = 0;
       state.challenge = null;
       state.challengeMessageId = null;
-      state.turnToken = 0;
 
-      state.players.forEach(id => {
-        state.fish[id] = STARTING_FISH;
+      state.players.forEach(id2 => {
+        state.fish[id2] = STARTING_FISH;
       });
 
       const thread = await interaction.channel.threads.create({
@@ -1014,9 +1259,9 @@ module.exports = {
 
       state.threadId = thread.id;
 
-      for (const id of state.players) {
+      for (const id2 of state.players) {
         try {
-          await thread.members.add(id);
+          await thread.members.add(id2);
         } catch {}
       }
 
@@ -1043,7 +1288,10 @@ module.exports = {
       if (state.phase !== "spin" && state.phase !== "challenge") return;
 
       if (interaction.user.id !== state.hostId) {
-        return interaction.reply({ content: "Only host can end the game.", ephemeral: true });
+        return interaction.reply({
+          content: "Only host can end the game.",
+          ephemeral: true
+        });
       }
 
       await interaction.deferUpdate();
@@ -1053,12 +1301,18 @@ module.exports = {
 
     if (id === "casino_spin") {
       if (state.phase !== "spin") {
-        return interaction.reply({ content: "A challenge is in progress.", ephemeral: true });
+        return interaction.reply({
+          content: "A challenge is in progress.",
+          ephemeral: true
+        });
       }
 
       const player = currentTurnPlayer(state);
       if (interaction.user.id !== player) {
-        return interaction.reply({ content: "Not your turn.", ephemeral: true });
+        return interaction.reply({
+          content: "Not your turn.",
+          ephemeral: true
+        });
       }
 
       await interaction.deferUpdate();
@@ -1066,37 +1320,35 @@ module.exports = {
       return;
     }
 
-    /* ---------------- CHALLENGE ACCEPT/DECLINE ---------------- */
+    /* ---------------- ACCEPT / DECLINE ---------------- */
 
     if (id === "casino_ch_accept") {
       if (state.phase !== "challenge" || !state.challenge) return;
 
-      const players = state.challenge.players;
-      if (!players.includes(interaction.user.id)) {
-        return interaction.reply({ content: "You are not part of this challenge.", ephemeral: true });
+      if (!state.challenge.players.includes(interaction.user.id)) {
+        return interaction.reply({
+          content: "You are not part of this challenge.",
+          ephemeral: true
+        });
       }
 
       await interaction.deferUpdate();
 
       state.challenge.accepted[interaction.user.id] = true;
 
+      const allAccepted = state.challenge.players.every(id2 => state.challenge.accepted[id2]);
       const msg = await getChallengeMessage(interaction.client, state);
-      if (!msg) return;
-
-      const acceptedText = players
-        .map(id => `${state.challenge.accepted[id] ? "✅" : "⏳"} <@${id}>`)
-        .join("\n");
-
-      const allAccepted = players.every(id => state.challenge.accepted[id]);
 
       if (!allAccepted) {
-        await msg.edit({
-          embeds: [createChallengeEmbed(
-            `${EMOJI[state.challenge.event]} CASINO CHALLENGE`,
-            `${players.map(id => `<@${id}>`).join(" vs ")}\n\nEvent: **${state.challenge.event}**\n\n${acceptedText}`
-          )],
-          components: challengeAcceptRows()
-        }).catch(() => {});
+        if (msg) {
+          await msg.edit({
+            embeds: [challengeEmbed(
+              `${EMOJI[state.challenge.event]} CASINO CHALLENGE`,
+              `${state.challenge.players.map(id2 => `${state.challenge.accepted[id2] ? "✅" : "⏳"} <@${id2}>`).join("\n")}\n\nEvent: **${state.challenge.event}**`
+            )],
+            components: challengeAcceptRows()
+          }).catch(() => {});
+        }
         return;
       }
 
@@ -1108,14 +1360,16 @@ module.exports = {
     if (id === "casino_ch_decline") {
       if (state.phase !== "challenge" || !state.challenge) return;
 
-      const players = state.challenge.players;
-      if (!players.includes(interaction.user.id)) {
-        return interaction.reply({ content: "You are not part of this challenge.", ephemeral: true });
+      if (!state.challenge.players.includes(interaction.user.id)) {
+        return interaction.reply({
+          content: "You are not part of this challenge.",
+          ephemeral: true
+        });
       }
 
       await interaction.deferUpdate();
 
-      const other = players.find(id => id !== interaction.user.id);
+      const other = state.challenge.players.find(id2 => id2 !== interaction.user.id);
       if (other) {
         state.fish[interaction.user.id] -= 3;
         state.fish[other] += 3;
@@ -1132,213 +1386,47 @@ module.exports = {
           `${EMOJI[state.challenge.event]} ${state.challenge.event}\n\n<@${interaction.user.id}> declined and loses 2 🐟`
         );
       }
-
       return;
     }
 
-    /* ---------------- TARGET SELECTION ---------------- */
+    /* ---------------- TARGET CHOICE ---------------- */
 
-    if (id === "casino_target") {
+    if (id === "casino_target" && interaction.isStringSelectMenu()) {
       if (state.phase !== "challenge" || !state.challenge) return;
-      if (!interaction.isStringSelectMenu()) return;
 
-      const actor = state.challenge.actor;
-      if (interaction.user.id !== actor) {
-        return interaction.reply({ content: "Only the active player can choose a target.", ephemeral: true });
+      if (interaction.user.id !== state.challenge.actor) {
+        return interaction.reply({
+          content: "Only the active player can choose a target.",
+          ephemeral: true
+        });
       }
 
       const target = interaction.values[0];
-      if (!state.alive.includes(target) || target === actor) {
-        return interaction.reply({ content: "Invalid target.", ephemeral: true });
+      if (!state.alive.includes(target) || target === state.challenge.actor) {
+        return interaction.reply({
+          content: "Invalid target.",
+          ephemeral: true
+        });
       }
 
       await interaction.deferUpdate();
 
-      state.challenge.players = [actor, target];
+      state.challenge.players = [state.challenge.actor, target];
       state.challenge.accepted = {};
       state.challenge.stage = "accept";
 
       const msg = await getChallengeMessage(interaction.client, state);
-      if (!msg) return;
-
-      await msg.edit({
-        embeds: [createChallengeEmbed(
-          `${EMOJI[state.challenge.event]} CASINO CHALLENGE`,
-          `<@${actor}> vs <@${target}>\n\nEvent: **${state.challenge.event}**\n\nBoth players must accept to begin.`
-        )],
-        components: challengeAcceptRows()
-      }).catch(() => {});
+      if (msg) {
+        await msg.edit({
+          embeds: [challengeEmbed(
+            `${EMOJI[state.challenge.event]} CASINO CHALLENGE`,
+            `<@${state.challenge.actor}> vs <@${target}>\n\nEvent: **${state.challenge.event}**\n\nBoth players must accept to begin.`
+          )],
+          components: challengeAcceptRows()
+        }).catch(() => {});
+      }
 
       await updatePanel(interaction.client, state, `${EMOJI[state.challenge.event]} ${state.challenge.event}\n\nWaiting for challenge acceptance...`);
-      return;
-    }
-
-    /* ---------------- SOLO / SHARED CHALLENGES ---------------- */
-
-    if (id === "casino_pick10" && interaction.isStringSelectMenu()) {
-      if (state.phase !== "challenge" || !state.challenge) return;
-      if (interaction.user.id !== state.challenge.actor) {
-        return interaction.reply({ content: "Only the active player can choose.", ephemeral: true });
-      }
-
-      await interaction.deferUpdate();
-
-      const num = parseInt(interaction.values[0], 10);
-      state.fish[interaction.user.id] += num;
-
-      await finishChallenge(
-        interaction.client,
-        state,
-        `🔢 Lucky Pick\n<@${interaction.user.id}> picked ${num} and wins ${num} 🐟`
-      );
-      return;
-    }
-
-    if (id === "casino_pick5" && interaction.isStringSelectMenu()) {
-      if (state.phase !== "challenge" || !state.challenge) return;
-      if (interaction.user.id !== state.challenge.actor) {
-        return interaction.reply({ content: "Only the active player can choose.", ephemeral: true });
-      }
-
-      await interaction.deferUpdate();
-
-      const pick = parseInt(interaction.values[0], 10);
-      const correct = rand(1, 5);
-      const event = state.challenge.event;
-
-      if (event === "Pick a Number") {
-        if (pick === correct) {
-          state.fish[interaction.user.id] += 4;
-          await finishChallenge(
-            interaction.client,
-            state,
-            `🎲 Pick a Number\n<@${interaction.user.id}> picked ${pick}\nCorrect was ${correct}\n+4 🐟`
-          );
-          return;
-        }
-
-        await finishChallenge(
-          interaction.client,
-          state,
-          `🎲 Pick a Number\n<@${interaction.user.id}> picked ${pick}\nCorrect was ${correct}\nNo reward.`
-        );
-        return;
-      }
-
-      if (event === "Guess Number") {
-        if (pick === correct) {
-          state.fish[interaction.user.id] += 4;
-          await finishChallenge(
-            interaction.client,
-            state,
-            `🔢 Guess Number\n<@${interaction.user.id}> guessed ${pick}\nCorrect!\n+4 🐟`
-          );
-          return;
-        }
-
-        await finishChallenge(
-          interaction.client,
-          state,
-          `🔢 Guess Number\n<@${interaction.user.id}> guessed ${pick}\nCorrect was ${correct}\nNo reward.`
-        );
-        return;
-      }
-
-      return;
-    }
-
-    if (id === "casino_risk_safe") {
-      if (state.phase !== "challenge" || !state.challenge) return;
-      if (interaction.user.id !== state.challenge.actor) {
-        return interaction.reply({ content: "Only the active player can choose.", ephemeral: true });
-      }
-
-      await interaction.deferUpdate();
-
-      const event = state.challenge.event;
-      if (event === "Risk Choice") {
-        state.fish[interaction.user.id] += 1;
-        await finishChallenge(
-          interaction.client,
-          state,
-          `🎯 Risk Choice\n<@${interaction.user.id}> played safe and gains +1 🐟`
-        );
-        return;
-      }
-
-      await finishChallenge(
-        interaction.client,
-        state,
-        `🟩 Safe or Risk\n<@${interaction.user.id}> played safe.\nNo fish changed.`
-      );
-      return;
-    }
-
-    if (id === "casino_risk_risk") {
-      if (state.phase !== "challenge" || !state.challenge) return;
-      if (interaction.user.id !== state.challenge.actor) {
-        return interaction.reply({ content: "Only the active player can choose.", ephemeral: true });
-      }
-
-      await interaction.deferUpdate();
-
-      const event = state.challenge.event;
-
-      if (event === "Risk Choice") {
-        if (Math.random() < 0.5) {
-          state.fish[interaction.user.id] += 5;
-          await finishChallenge(interaction.client, state, `🎯 Risk Choice\n<@${interaction.user.id}> took the risk and won +5 🐟`);
-          return;
-        }
-        state.fish[interaction.user.id] -= 3;
-        await finishChallenge(interaction.client, state, `🎯 Risk Choice\n<@${interaction.user.id}> took the risk and lost 3 🐟`);
-        return;
-      }
-
-      if (Math.random() < 0.5) {
-        state.fish[interaction.user.id] += 4;
-        await finishChallenge(interaction.client, state, `🟩 Safe or Risk\n<@${interaction.user.id}> took the risk and won +4 🐟`);
-        return;
-      }
-
-      state.fish[interaction.user.id] -= 2;
-      await finishChallenge(interaction.client, state, `🟩 Safe or Risk\n<@${interaction.user.id}> took the risk and lost 2 🐟`);
-      return;
-    }
-
-    if (id === "casino_allin_yes") {
-      if (state.phase !== "challenge" || !state.challenge) return;
-      if (interaction.user.id !== state.challenge.actor) {
-        return interaction.reply({ content: "Only the active player can choose.", ephemeral: true });
-      }
-
-      await interaction.deferUpdate();
-
-      const amount = state.fish[interaction.user.id];
-      if (amount <= 0) {
-        await finishChallenge(interaction.client, state, `🎰 All In\n<@${interaction.user.id}> had nothing to bet.`);
-        return;
-      }
-
-      if (Math.random() < 0.5) {
-        state.fish[interaction.user.id] += amount;
-        await finishChallenge(interaction.client, state, `🎰 All In\n<@${interaction.user.id}> doubled to ${state.fish[interaction.user.id]} 🐟`);
-        return;
-      }
-
-      state.fish[interaction.user.id] = 0;
-      await finishChallenge(interaction.client, state, `🎰 All In\n<@${interaction.user.id}> lost everything!`);
-      return;
-    }
-
-    if (id === "casino_allin_no") {
-      if (state.phase !== "challenge" || !state.challenge) return;
-      if (interaction.user.id !== state.challenge.actor) {
-        return interaction.reply({ content: "Only the active player can choose.", ephemeral: true });
-      }
-
-      await interaction.deferUpdate();
-      await finishChallenge(interaction.client, state, `🎰 All In\n<@${interaction.user.id}> backed out.`);
       return;
     }
 
@@ -1348,14 +1436,16 @@ module.exports = {
       if (state.phase !== "challenge" || !state.challenge) return;
 
       if (!state.challenge.players.includes(interaction.user.id)) {
-        return interaction.reply({ content: "You are not in this challenge.", ephemeral: true });
+        return interaction.reply({
+          content: "You are not in this challenge.",
+          ephemeral: true
+        });
       }
 
       await interaction.deferUpdate();
 
-      const choice = id.replace("casino_rps_", "");
       state.challenge.data.choices = state.challenge.data.choices || {};
-      state.challenge.data.choices[interaction.user.id] = choice;
+      state.challenge.data.choices[interaction.user.id] = id.replace("casino_rps_", "");
 
       const [a, b] = state.challenge.players;
       const ca = state.challenge.data.choices[a];
@@ -1365,8 +1455,8 @@ module.exports = {
         const msg = await getChallengeMessage(interaction.client, state);
         if (msg) {
           await msg.edit({
-            embeds: [createChallengeEmbed(
-              `✊ ${state.challenge.event}`,
+            embeds: [challengeEmbed(
+              `✊ Rock Paper Scissors`,
               `<@${a}> ${ca ? "✅" : "⏳"}\n<@${b}> ${cb ? "✅" : "⏳"}`
             )],
             components: rpsRows()
@@ -1399,13 +1489,16 @@ module.exports = {
       return;
     }
 
-    /* ---------------- ROLL / DRAW ---------------- */
+    /* ---------------- ROLL / DRAW CARD ---------------- */
 
     if (id === "casino_roll") {
       if (state.phase !== "challenge" || !state.challenge) return;
 
       if (!state.challenge.players.includes(interaction.user.id)) {
-        return interaction.reply({ content: "You are not in this challenge.", ephemeral: true });
+        return interaction.reply({
+          content: "You are not in this challenge.",
+          ephemeral: true
+        });
       }
 
       await interaction.deferUpdate();
@@ -1417,13 +1510,12 @@ module.exports = {
       const ra = state.challenge.data.rolls[a];
       const rb = state.challenge.data.rolls[b];
 
-      const msg = await getChallengeMessage(interaction.client, state);
-
       if (!ra || !rb) {
+        const msg = await getChallengeMessage(interaction.client, state);
         if (msg) {
           const label = state.challenge.event === "High Card Duel" ? "Draw Card" : "Roll";
           await msg.edit({
-            embeds: [createChallengeEmbed(
+            embeds: [challengeEmbed(
               `${EMOJI[state.challenge.event]} ${state.challenge.event}`,
               `<@${a}> ${ra ? `(${ra})` : "⏳"}\n<@${b}> ${rb ? `(${rb})` : "⏳"}`
             )],
@@ -1434,7 +1526,11 @@ module.exports = {
       }
 
       if (ra === rb) {
-        await finishChallenge(interaction.client, state, `${EMOJI[state.challenge.event]} ${state.challenge.event}\nTie! ${ra} - ${rb}\nNo fish changed.`);
+        await finishChallenge(
+          interaction.client,
+          state,
+          `${EMOJI[state.challenge.event]} ${state.challenge.event}\nTie! ${ra} - ${rb}\nNo fish changed.`
+        );
         return;
       }
 
@@ -1452,19 +1548,23 @@ module.exports = {
       return;
     }
 
-    /* ---------------- COIN FLIP DUEL ---------------- */
+    /* ---------------- COIN FLIP ---------------- */
 
     if (id === "casino_coin_heads" || id === "casino_coin_tails") {
       if (state.phase !== "challenge" || !state.challenge) return;
 
       if (!state.challenge.players.includes(interaction.user.id)) {
-        return interaction.reply({ content: "You are not in this challenge.", ephemeral: true });
+        return interaction.reply({
+          content: "You are not in this challenge.",
+          ephemeral: true
+        });
       }
 
       await interaction.deferUpdate();
 
       state.challenge.data.coinChoices = state.challenge.data.coinChoices || {};
-      state.challenge.data.coinChoices[interaction.user.id] = id === "casino_coin_heads" ? "heads" : "tails";
+      state.challenge.data.coinChoices[interaction.user.id] =
+        id === "casino_coin_heads" ? "heads" : "tails";
 
       const [a, b] = state.challenge.players;
       const ca = state.challenge.data.coinChoices[a];
@@ -1474,7 +1574,7 @@ module.exports = {
         const msg = await getChallengeMessage(interaction.client, state);
         if (msg) {
           await msg.edit({
-            embeds: [createChallengeEmbed(
+            embeds: [challengeEmbed(
               `🪙 Coin Flip Duel`,
               `<@${a}> ${ca ? "✅" : "⏳"}\n<@${b}> ${cb ? "✅" : "⏳"}`
             )],
@@ -1506,6 +1606,286 @@ module.exports = {
       return;
     }
 
+    /* ---------------- PICKS ---------------- */
+
+    if (id === "casino_pick10" && interaction.isStringSelectMenu()) {
+      if (state.phase !== "challenge" || !state.challenge) return;
+
+      if (!state.challenge.players.includes(interaction.user.id)) {
+        return interaction.reply({
+          content: "You are not in this challenge.",
+          ephemeral: true
+        });
+      }
+
+      await interaction.deferUpdate();
+
+      state.challenge.data.picks = state.challenge.data.picks || {};
+      state.challenge.data.picks[interaction.user.id] = parseInt(interaction.values[0], 10);
+
+      const [a, b] = state.challenge.players;
+      const pa = state.challenge.data.picks[a];
+      const pb = state.challenge.data.picks[b];
+
+      if (pa == null || pb == null) {
+        const msg = await getChallengeMessage(interaction.client, state);
+        if (msg) {
+          await msg.edit({
+            embeds: [challengeEmbed(
+              `🔢 Lucky Pick`,
+              `<@${a}> ${pa != null ? `(${pa})` : "⏳"}\n<@${b}> ${pb != null ? `(${pb})` : "⏳"}\n\nBoth choose 1-10. Closest to the hidden target wins.`
+            )],
+            components: pickRows("casino_pick10", 10)
+          }).catch(() => {});
+        }
+        return;
+      }
+
+      const target = rand(1, 10);
+      const da = Math.abs(pa - target);
+      const db = Math.abs(pb - target);
+
+      if (da === db) {
+        await finishChallenge(interaction.client, state, `🔢 Lucky Pick\nTarget: ${target}\n<@${a}> picked ${pa}\n<@${b}> picked ${pb}\nTie!`);
+        return;
+      }
+
+      const winner = da < db ? a : b;
+      const loser = winner === a ? b : a;
+
+      state.fish[winner] += 3;
+      state.fish[loser] -= 3;
+
+      await finishChallenge(
+        interaction.client,
+        state,
+        `🔢 Lucky Pick\nTarget: ${target}\n<@${a}> picked ${pa}\n<@${b}> picked ${pb}\n<@${winner}> wins +3 🐟`
+      );
+      return;
+    }
+
+    if (id === "casino_pick5" && interaction.isStringSelectMenu()) {
+      if (state.phase !== "challenge" || !state.challenge) return;
+
+      if (!state.challenge.players.includes(interaction.user.id)) {
+        return interaction.reply({
+          content: "You are not in this challenge.",
+          ephemeral: true
+        });
+      }
+
+      await interaction.deferUpdate();
+
+      state.challenge.data.picks = state.challenge.data.picks || {};
+      state.challenge.data.picks[interaction.user.id] = parseInt(interaction.values[0], 10);
+
+      const [a, b] = state.challenge.players;
+      const pa = state.challenge.data.picks[a];
+      const pb = state.challenge.data.picks[b];
+
+      if (pa == null || pb == null) {
+        const msg = await getChallengeMessage(interaction.client, state);
+        if (msg) {
+          await msg.edit({
+            embeds: [challengeEmbed(
+              `${EMOJI[state.challenge.event]} ${state.challenge.event}`,
+              `<@${a}> ${pa != null ? `(${pa})` : "⏳"}\n<@${b}> ${pb != null ? `(${pb})` : "⏳"}`
+            )],
+            components: pickRows("casino_pick5", 5)
+          }).catch(() => {});
+        }
+        return;
+      }
+
+      const target = rand(1, 5);
+      const da = Math.abs(pa - target);
+      const db = Math.abs(pb - target);
+
+      if (da === db) {
+        await finishChallenge(interaction.client, state, `${EMOJI[state.challenge.event]} ${state.challenge.event}\nTarget: ${target}\nTie!`);
+        return;
+      }
+
+      const winner = da < db ? a : b;
+      const loser = winner === a ? b : a;
+
+      state.fish[winner] += 3;
+      state.fish[loser] -= 3;
+
+      await finishChallenge(
+        interaction.client,
+        state,
+        `${EMOJI[state.challenge.event]} ${state.challenge.event}\nTarget: ${target}\n<@${winner}> wins +3 🐟`
+      );
+      return;
+    }
+
+    /* ---------------- RISK / SAFE ---------------- */
+
+    if (id === "casino_risk_safe" || id === "casino_risk_risk") {
+      if (state.phase !== "challenge" || !state.challenge) return;
+
+      if (!state.challenge.players.includes(interaction.user.id)) {
+        return interaction.reply({
+          content: "You are not in this challenge.",
+          ephemeral: true
+        });
+      }
+
+      await interaction.deferUpdate();
+
+      state.challenge.data.choices = state.challenge.data.choices || {};
+      state.challenge.data.choices[interaction.user.id] = id === "casino_risk_safe" ? "safe" : "risk";
+
+      const [a, b] = state.challenge.players;
+      const ca = state.challenge.data.choices[a];
+      const cb = state.challenge.data.choices[b];
+
+      if (!ca || !cb) {
+        const msg = await getChallengeMessage(interaction.client, state);
+        if (msg) {
+          await msg.edit({
+            embeds: [challengeEmbed(
+              `${EMOJI[state.challenge.event]} ${state.challenge.event}`,
+              `<@${a}> ${ca ? "✅" : "⏳"}\n<@${b}> ${cb ? "✅" : "⏳"}`
+            )],
+            components: riskRows()
+          }).catch(() => {});
+        }
+        return;
+      }
+
+      let text = `${EMOJI[state.challenge.event]} ${state.challenge.event}\n`;
+
+      for (const p of [a, b]) {
+        const c = state.challenge.data.choices[p];
+
+        if (state.challenge.event === "Risk Choice") {
+          if (c === "safe") {
+            state.fish[p] += 1;
+            text += `\n<@${p}> played safe (+1 🐟)`;
+          } else if (Math.random() < 0.5) {
+            state.fish[p] += 5;
+            text += `\n<@${p}> risked and won +5 🐟`;
+          } else {
+            state.fish[p] -= 3;
+            text += `\n<@${p}> risked and lost 3 🐟`;
+          }
+        } else {
+          if (c === "safe") {
+            text += `\n<@${p}> played safe (0)`;
+          } else if (Math.random() < 0.5) {
+            state.fish[p] += 4;
+            text += `\n<@${p}> risked and won +4 🐟`;
+          } else {
+            state.fish[p] -= 2;
+            text += `\n<@${p}> risked and lost 2 🐟`;
+          }
+        }
+      }
+
+      await finishChallenge(interaction.client, state, text);
+      return;
+    }
+
+    /* ---------------- ALL IN ---------------- */
+
+    if (id === "casino_allin_yes" || id === "casino_allin_no") {
+      if (state.phase !== "challenge" || !state.challenge) return;
+
+      if (!state.challenge.players.includes(interaction.user.id)) {
+        return interaction.reply({
+          content: "You are not in this challenge.",
+          ephemeral: true
+        });
+      }
+
+      await interaction.deferUpdate();
+
+      state.challenge.data.choices = state.challenge.data.choices || {};
+      state.challenge.data.choices[interaction.user.id] = id === "casino_allin_yes" ? "yes" : "no";
+
+      const [a, b] = state.challenge.players;
+      const ca = state.challenge.data.choices[a];
+      const cb = state.challenge.data.choices[b];
+
+      if (!ca || !cb) {
+        const msg = await getChallengeMessage(interaction.client, state);
+        if (msg) {
+          await msg.edit({
+            embeds: [challengeEmbed(
+              `🎰 All In`,
+              `<@${a}> ${ca ? "✅" : "⏳"}\n<@${b}> ${cb ? "✅" : "⏳"}`
+            )],
+            components: allInRows()
+          }).catch(() => {});
+        }
+        return;
+      }
+
+      if (ca === "no" && cb === "no") {
+        await finishChallenge(interaction.client, state, `🎰 All In\nBoth backed out. No fish changed.`);
+        return;
+      }
+
+      if (ca === "yes" && cb === "no") {
+        state.fish[a] += 2;
+        state.fish[b] -= 2;
+        await finishChallenge(interaction.client, state, `🎰 All In\n<@${a}> went all in.\n<@${b}> backed out.\n<@${a}> wins +2 🐟`);
+        return;
+      }
+
+      if (cb === "yes" && ca === "no") {
+        state.fish[b] += 2;
+        state.fish[a] -= 2;
+        await finishChallenge(interaction.client, state, `🎰 All In\n<@${b}> went all in.\n<@${a}> backed out.\n<@${b}> wins +2 🐟`);
+        return;
+      }
+
+      const winner = Math.random() < 0.5 ? a : b;
+      const loser = winner === a ? b : a;
+
+      const gain = Math.min(5, state.fish[loser] + 5);
+      state.fish[winner] += gain;
+      state.fish[loser] -= 5;
+
+      await finishChallenge(interaction.client, state, `🎰 All In\nBoth went all in!\n<@${winner}> wins +5 🐟`);
+      return;
+    }
+
+    /* ---------------- STEAL / GIFT AMOUNT ---------------- */
+
+    if (id === "casino_amount_1" || id === "casino_amount_2") {
+      if (state.phase !== "challenge" || !state.challenge) return;
+
+      if (interaction.user.id !== state.challenge.actor) {
+        return interaction.reply({
+          content: "Only the active player can choose the amount.",
+          ephemeral: true
+        });
+      }
+
+      await interaction.deferUpdate();
+
+      const amount = id === "casino_amount_1" ? 1 : 2;
+      const actor = state.challenge.actor;
+      const target = state.challenge.players.find(id2 => id2 !== actor);
+
+      if (state.challenge.event === "Steal") {
+        const realAmount = Math.min(amount, state.fish[target]);
+        state.fish[target] -= realAmount;
+        state.fish[actor] += realAmount;
+        await finishChallenge(interaction.client, state, `🦹 Steal\n<@${actor}> steals ${realAmount} 🐟 from <@${target}>`);
+        return;
+      }
+
+      const realAmount = Math.min(amount, state.fish[actor]);
+      state.fish[actor] -= realAmount;
+      state.fish[target] += realAmount;
+      await finishChallenge(interaction.client, state, `🎁 Gift\n<@${actor}> gives ${realAmount} 🐟 to <@${target}>`);
+      return;
+    }
+
     /* ---------------- REACTION / QUICK CLICK / FAST TYPE ---------------- */
 
     if (id === "casino_react_click") {
@@ -1513,7 +1893,10 @@ module.exports = {
       if (state.challenge.stage !== "armed") return;
 
       if (!state.challenge.players.includes(interaction.user.id)) {
-        return interaction.reply({ content: "You are not in this challenge.", ephemeral: true });
+        return interaction.reply({
+          content: "You are not in this challenge.",
+          ephemeral: true
+        });
       }
 
       await interaction.deferUpdate();
@@ -1532,13 +1915,16 @@ module.exports = {
       return;
     }
 
-    /* ---------------- QUIZ CHALLENGES ---------------- */
+    /* ---------------- QUIZ TYPES ---------------- */
 
     if (id.startsWith("casino_quiz_")) {
       if (state.phase !== "challenge" || !state.challenge) return;
 
       if (!state.challenge.players.includes(interaction.user.id)) {
-        return interaction.reply({ content: "You are not in this challenge.", ephemeral: true });
+        return interaction.reply({
+          content: "You are not in this challenge.",
+          ephemeral: true
+        });
       }
 
       await interaction.deferUpdate();
@@ -1574,22 +1960,18 @@ module.exports = {
       return;
     }
 
-    /* ---------------- STEAL / GIFT ---------------- */
-
-    if (id === "casino_target_select_done") {
-      return;
-    }
-
-    /* target selection uses casino_target handled earlier, actual effect starts after both accept */
-
     /* ---------------- BLACKJACK ---------------- */
 
     if (id === "casino_bj_hit" || id === "casino_bj_stand") {
       if (state.phase !== "challenge" || !state.challenge || state.challenge.event !== "Blackjack") return;
 
       const current = state.challenge.data.current;
+
       if (interaction.user.id !== current) {
-        return interaction.reply({ content: "Not your turn in blackjack.", ephemeral: true });
+        return interaction.reply({
+          content: "Not your turn in blackjack.",
+          ephemeral: true
+        });
       }
 
       await interaction.deferUpdate();
@@ -1597,7 +1979,6 @@ module.exports = {
       const hands = state.challenge.data.hands;
       const stood = state.challenge.data.stood;
       const players = state.challenge.players;
-      const idx = players.indexOf(current);
 
       if (id === "casino_bj_hit") {
         hands[current].push(drawCard());
@@ -1643,41 +2024,19 @@ module.exports = {
 
       state.challenge.data.current = nextPlayer;
       const msg = await getChallengeMessage(interaction.client, state);
-      if (!msg) return;
-
-      const [a, b] = players;
-
-      await msg.edit({
-        embeds: [createChallengeEmbed(
-          `♠️ Blackjack`,
-          `<@${a}> — ${hands[a].join(" ")} (${handScore(hands[a])})\n<@${b}> — ${hands[b].join(" ")} (${handScore(hands[b])})\n\nTurn: <@${state.challenge.data.current}>`
-        )],
-        components: bjRows(state)
-      }).catch(() => {});
-      return;
-    }
-
-    /* ---------------- CHALLENGE SPECIAL START FOR STEAL/GIFT ---------------- */
-
-    if (state.phase === "challenge" && state.challenge && (state.challenge.event === "Steal" || state.challenge.event === "Gift")) {
-      if (state.challenge.stage === "play") {
-        const actor = state.challenge.actor;
-        const target = state.challenge.players[1];
-
-        if (state.challenge.event === "Steal") {
-          const amount = Math.min(2, state.fish[target]);
-          state.fish[target] -= amount;
-          state.fish[actor] += amount;
-          await finishChallenge(interaction.client, state, `🦹 Steal\n<@${actor}> steals ${amount} 🐟 from <@${target}>`);
-          return;
-        }
-
-        const amount = Math.min(2, state.fish[actor]);
-        state.fish[actor] -= amount;
-        state.fish[target] += amount;
-        await finishChallenge(interaction.client, state, `🎁 Gift\n<@${actor}> gives ${amount} 🐟 to <@${target}>`);
-        return;
+      if (msg) {
+        const [a, b] = players;
+        await msg.edit({
+          embeds: [challengeEmbed(
+            `♠️ Blackjack`,
+            `<@${a}> — ${hands[a].join(" ")} (${handScore(hands[a])})\n` +
+            `<@${b}> — ${hands[b].join(" ")} (${handScore(hands[b])})\n\n` +
+            `Turn: <@${state.challenge.data.current}>`
+          )],
+          components: bjRows(state)
+        }).catch(() => {});
       }
+      return;
     }
   }
 };
