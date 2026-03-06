@@ -5,32 +5,47 @@ ButtonBuilder,
 ButtonStyle
 } = require("discord.js");
 
-const channelCheck = require("../utils/channelCheck");
-const createEmbed = require("../utils/embed");
 const games = require("../systems/games");
+const createEmbed = require("../utils/embed");
+const channelCheck = require("../utils/channelCheck");
 
-const MAX_PLAYERS = 10;
+module.exports = {
 
-function lobbyEmbed(state){
+data: new SlashCommandBuilder()
+.setName("impostor")
+.setDescription("Start an Impostor party game"),
 
-const players = state.players.map(p => `• <@${p}>`).join("\n");
+async execute(interaction){
 
-return {
-title: "🎭 Impostor Lobby",
-description: `Host: <@${state.hostId}>
+if(!channelCheck(interaction)) return;
 
-Players: ${state.players.length}/${MAX_PLAYERS}
-
-Players
-${players}`
-};
-
+if(games.get(interaction.channelId)){
+return interaction.reply({
+embeds:[createEmbed("❌ Game running","A game is already running in this channel.")],
+ephemeral:true
+});
 }
 
-function lobbyButtons(){
+const host = interaction.user.id;
 
-return [
-new ActionRowBuilder().addComponents(
+games.create(interaction.channelId,{
+type:"impostor",
+host,
+players:[host],
+phase:"lobby",
+thread:null
+});
+
+const embed = createEmbed(
+"🎭 Impostor Lobby",
+`Host: <@${host}>
+
+Players: 1
+
+Join the game!`
+);
+
+const row = new ActionRowBuilder().addComponents(
 
 new ButtonBuilder()
 .setCustomId("imp_join")
@@ -52,42 +67,11 @@ new ButtonBuilder()
 .setLabel("Cancel")
 .setStyle(ButtonStyle.Danger)
 
-)
-];
-
-}
-
-module.exports = {
-
-data: new SlashCommandBuilder()
-.setName("impostor")
-.setDescription("Start an Impostor game"),
-
-async execute(interaction){
-
-if(!channelCheck(interaction)) return;
-
-if(games.get(interaction.channelId)){
-return interaction.reply({
-content:"A game is already running in this channel.",
-ephemeral:true
-});
-}
-
-const state = {
-type:"impostor",
-hostId: interaction.user.id,
-players:[interaction.user.id],
-phase:"lobby"
-};
-
-games.create(interaction.channelId,state);
+);
 
 await interaction.reply({
-
-embeds:[lobbyEmbed(state)],
-components:lobbyButtons()
-
+embeds:[embed],
+components:[row]
 });
 
 }
