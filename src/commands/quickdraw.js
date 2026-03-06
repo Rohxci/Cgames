@@ -68,9 +68,7 @@ ephemeral:true
 }
 
 const embed = createEmbed(
-
 "🔫 QuickDraw Challenge",
-
 `${interaction.user} challenged ${opponent}
 
 **How to play**
@@ -78,9 +76,8 @@ Wait for the signal.
 
 Press **DRAW** when it appears.
 
-⚠️ Sometimes fake signals appear.
-If you click too early, you lose.`
-
+⚠️ Fake signals may appear.
+Clicking too early means you lose.`
 );
 
 const row = new ActionRowBuilder().addComponents(
