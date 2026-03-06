@@ -6,6 +6,7 @@ StringSelectMenuBuilder
 } = require("discord.js");
 
 const games = require("../systems/games");
+const { lockChannel, unlockChannel } = require("../systems/channelLock");
 
 const MAX_PLAYERS = 10;
 const MIN_PLAYERS = 2;
@@ -188,6 +189,11 @@ new ButtonBuilder()
 
 });
 
+state.originalChannelName = await lockChannel(
+interaction.channel,
+state.players
+);
+
 return;
 
 }
@@ -309,6 +315,7 @@ voted = k;
 
 const crewWin = voted === state.impostor;
 
+await unlockChannel(interaction.channel,state.originalChannelName);
 games.delete(interaction.channelId);
 
 await interaction.channel.send({
