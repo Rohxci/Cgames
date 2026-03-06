@@ -1,16 +1,16 @@
 const {
-ActionRowBuilder,
-ButtonBuilder,
-ButtonStyle,
-StringSelectMenuBuilder,
-ChannelType
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+  StringSelectMenuBuilder,
+  ChannelType
 } = require("discord.js");
 
 const games = require("../systems/games");
 
 const COLORS = ["🔴", "🟡", "🟢", "🔵"];
 
-/* -------------------- DECK -------------------- */
+/* ---------------- helpers ---------------- */
 
 function buildDeck() {
   const deck = [];
@@ -19,7 +19,6 @@ function buildDeck() {
     for (let i = 0; i < 10; i++) {
       deck.push(`${c} ${i}`);
     }
-
     deck.push(`${c} Skip`);
     deck.push(`${c} +2`);
   }
@@ -30,8 +29,6 @@ function buildDeck() {
 
   return deck.sort(() => Math.random() - 0.5);
 }
-
-/* -------------------- HELPERS -------------------- */
 
 function getGame(channel) {
   let game = games.get(channel.id);
@@ -44,6 +41,18 @@ function getGame(channel) {
   return null;
 }
 
+function getHand(game, userId) {
+  return userId === game.player1 ? game.hand1 : game.hand2;
+}
+
+function getOpponentId(game, userId) {
+  return userId === game.player1 ? game.player2 : game.player1;
+}
+
+function setNextTurn(game, currentUserId) {
+  game.turn = getOpponentId(game, currentUserId);
+}
+
 function isPlayable(card, top) {
   if (card === "🌈 Wild") return true;
 
@@ -53,12 +62,14 @@ function isPlayable(card, top) {
   return cardColor === topColor || cardValue === topValue;
 }
 
-function getHand(game, userId) {
-  return userId === game.player1 ? game.hand1 : game.hand2;
-}
+function playableIndexes(hand, top) {
+  const indexes = [];
 
-function setNextTurn(game, currentUserId) {
-  game.turn = currentUserId === game.player1 ? game.player2 : game.player1;
+  for (let i = 0; i < hand.length; i++) {
+    if (isPlayable(hand[i], top)) indexes.push(i);
+  }
+
+  return indexes;
 }
 
 function tableEmbed(game) {
@@ -76,13 +87,12 @@ Cards
   };
 }
 
-function actionButtons() {
+function buttonsRow() {
   return new ActionRowBuilder().addComponents(
     new ButtonBuilder()
       .setCustomId("uno_draw")
       .setLabel("Draw Card")
       .setStyle(ButtonStyle.Primary),
-
     new ButtonBuilder()
       .setCustomId("uno_surrender")
       .setLabel("Surrender")
@@ -90,38 +100,24 @@ function actionButtons() {
   );
 }
 
-/*
-  IMPORTANT:
-  Select menu option values MUST be unique.
-  So we use the card INDEX in the player's hand, not the card text itself.
-*/
-function cardMenuFromHand(hand, top) {
-  const playableIndices = [];
-
-  for (let i = 0; i < hand.length; i++) {
-    if (isPlayable(hand[i], top)) {
-      playableIndices.push(i);
-    }
-  }
-
-  const indicesToShow = playableIndices.length > 0
-    ? playableIndices
-    : hand.map((_, i) => i);
+function cardMenuRow(hand, top) {
+  const playable = playableIndexes(hand, top);
+  const indexes = playable.length > 0 ? playable : hand.map((_, i) => i);
 
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId("uno_play")
       .setPlaceholder("Select card")
       .addOptions(
-        indicesToShow.slice(0, 25).map((index) => ({
-          label: hand[index],
-          value: String(index)
+        indexes.slice(0, 25).map((i) => ({
+          label: hand[i],
+          value: String(i)
         }))
       )
   );
 }
 
-function colorMenu() {
+function colorMenuRow() {
   return new ActionRowBuilder().addComponents(
     new StringSelectMenuBuilder()
       .setCustomId("uno_color")
@@ -135,61 +131,57 @@ function colorMenu() {
   );
 }
 
-async function updateTableMessage(message, game) {
-  const currentHand = getHand(game, game.turn);
+async function renderTable(interaction, game) {
+  const hand = getHand(game, game.turn);
 
-  await message.edit({
+  await interaction.update({
     content: null,
     embeds: [tableEmbed(game)],
     components: [
-      cardMenuFromHand(currentHand, game.top),
-      actionButtons()
+      cardMenuRow(hand, game.top),
+      buttonsRow()
     ]
   });
 }
 
-async function finishUnoGame(interaction, game, winnerId, reasonText = null) {
+async function finishGame(interaction, game, winnerId, extraText = "") {
   const mainChannel = await interaction.client.channels.fetch(game.mainChannelId).catch(() => null);
-
-  let resultText = reasonText
-    ? `${reasonText}\n\nWinner: <@${winnerId}>`
-    : `Winner: <@${winnerId}>`;
 
   if (mainChannel) {
     await mainChannel.send({
       embeds: [{
         title: "🃏 UNO Duel Finished",
-        description: resultText
+        description: `${extraText ? `${extraText}\n\n` : ""}Winner: <@${winnerId}>`
       }]
     }).catch(() => {});
   }
 
   games.delete(interaction.channelId);
 
+  await interaction.update({
+    embeds: [{
+      title: "🃏 UNO Duel",
+      description: `${extraText ? `${extraText}\n\n` : ""}Winner: <@${winnerId}>`
+    }],
+    components: []
+  }).catch(() => {});
+
   await interaction.channel.delete().catch(() => {});
 }
 
-/* -------------------- MAIN -------------------- */
+/* ---------------- main ---------------- */
 
 module.exports = {
-
   match(interaction) {
-    if (interaction.isButton()) {
-      return interaction.customId.startsWith("uno_");
-    }
-
-    if (interaction.isStringSelectMenu()) {
-      return interaction.customId.startsWith("uno_");
-    }
-
+    if (interaction.isButton()) return interaction.customId.startsWith("uno_");
+    if (interaction.isStringSelectMenu()) return interaction.customId.startsWith("uno_");
     return false;
   },
 
   async run(interaction) {
     const id = interaction.customId;
 
-    /* ---------- ACCEPT ---------- */
-
+    /* ACCEPT */
     if (id.startsWith("uno_accept_")) {
       const parts = id.split("_");
       const p1 = parts[2];
@@ -241,16 +233,15 @@ module.exports = {
       await thread.send({
         embeds: [tableEmbed(game)],
         components: [
-          cardMenuFromHand(game.hand1, game.top),
-          actionButtons()
+          cardMenuRow(game.hand1, game.top),
+          buttonsRow()
         ]
       });
 
       return;
     }
 
-    /* ---------- DECLINE ---------- */
-
+    /* DECLINE */
     if (id.startsWith("uno_decline_")) {
       const p2 = id.split("_")[3];
 
@@ -270,8 +261,7 @@ module.exports = {
       return;
     }
 
-    /* ---------- CANCEL ---------- */
-
+    /* CANCEL */
     if (id.startsWith("uno_cancel_")) {
       const p1 = id.split("_")[2];
 
@@ -291,13 +281,11 @@ module.exports = {
       return;
     }
 
-    /* ---------- GAME LOOKUP ---------- */
-
+    /* GAME */
     const game = getGame(interaction.channel);
     if (!game || game.type !== "uno") return;
 
-    /* ---------- DRAW ---------- */
-
+    /* DRAW */
     if (id === "uno_draw") {
       if (interaction.user.id !== game.turn) {
         return interaction.reply({
@@ -306,33 +294,23 @@ module.exports = {
         });
       }
 
-      await interaction.deferUpdate();
-
-      const drawn = game.deck.shift();
       const hand = getHand(game, interaction.user.id);
-      hand.push(drawn);
+      const drawn = game.deck.shift();
+
+      if (drawn) hand.push(drawn);
 
       setNextTurn(game, interaction.user.id);
 
-      await updateTableMessage(interaction.message, game);
-      return;
+      return renderTable(interaction, game);
     }
 
-    /* ---------- SURRENDER ---------- */
-
+    /* SURRENDER */
     if (id === "uno_surrender") {
-      const winner =
-        interaction.user.id === game.player1
-          ? game.player2
-          : game.player1;
-
-      await interaction.deferUpdate();
-      await finishUnoGame(interaction, game, winner, `<@${interaction.user.id}> surrendered.`);
-      return;
+      const winner = getOpponentId(game, interaction.user.id);
+      return finishGame(interaction, game, winner, `<@${interaction.user.id}> surrendered.`);
     }
 
-    /* ---------- PLAY CARD ---------- */
-
+    /* PLAY CARD */
     if (id === "uno_play") {
       if (interaction.user.id !== game.turn) {
         return interaction.reply({
@@ -341,22 +319,23 @@ module.exports = {
         });
       }
 
-      await interaction.deferUpdate();
-
       const hand = getHand(game, interaction.user.id);
       const selectedIndex = parseInt(interaction.values[0], 10);
 
       if (Number.isNaN(selectedIndex) || selectedIndex < 0 || selectedIndex >= hand.length) {
-        return;
+        return interaction.reply({
+          content: "Invalid card.",
+          ephemeral: true
+        });
       }
 
       const selectedCard = hand[selectedIndex];
 
       if (!isPlayable(selectedCard, game.top)) {
-        return interaction.followUp({
+        return interaction.reply({
           content: "You cannot play that card.",
           ephemeral: true
-        }).catch(() => {});
+        });
       }
 
       hand.splice(selectedIndex, 1);
@@ -364,21 +343,17 @@ module.exports = {
       if (selectedCard === "🌈 Wild") {
         game.pendingWildPlayer = interaction.user.id;
 
-        await interaction.message.edit({
+        return interaction.update({
           content: "Choose color",
           embeds: [],
-          components: [colorMenu()]
+          components: [colorMenuRow()]
         });
-
-        return;
       }
 
-      await applyCardEffect(interaction, game, selectedCard, interaction.user.id);
-      return;
+      return applyCard(interaction, game, selectedCard, interaction.user.id);
     }
 
-    /* ---------- CHOOSE COLOR ---------- */
-
+    /* COLOR CHOICE */
     if (id === "uno_color") {
       if (game.pendingWildPlayer !== interaction.user.id) {
         return interaction.reply({
@@ -387,48 +362,40 @@ module.exports = {
         });
       }
 
-      await interaction.deferUpdate();
-
       const color = interaction.values[0];
-      game.top = `${color} Wild`;
       game.pendingWildPlayer = null;
+      game.top = `${color} Wild`;
 
       const currentHand = getHand(game, interaction.user.id);
 
       if (currentHand.length === 0) {
-        await finishUnoGame(interaction, game, interaction.user.id);
-        return;
+        return finishGame(interaction, game, interaction.user.id);
       }
 
       setNextTurn(game, interaction.user.id);
-
-      await updateTableMessage(interaction.message, game);
-      return;
+      return renderTable(interaction, game);
     }
   }
 };
 
-/* -------------------- EFFECTS -------------------- */
-
-async function applyCardEffect(interaction, game, card, userId) {
+async function applyCard(interaction, game, card, userId) {
   const currentHand = getHand(game, userId);
 
   if (card.includes("+2")) {
-    const opponentId = userId === game.player1 ? game.player2 : game.player1;
-    const opponentHand = getHand(game, opponentId);
+    const opp = getOpponentId(game, userId);
+    const oppHand = getHand(game, opp);
 
-    const draw1 = game.deck.shift();
-    const draw2 = game.deck.shift();
+    const c1 = game.deck.shift();
+    const c2 = game.deck.shift();
 
-    if (draw1) opponentHand.push(draw1);
-    if (draw2) opponentHand.push(draw2);
+    if (c1) oppHand.push(c1);
+    if (c2) oppHand.push(c2);
   }
 
   game.top = card;
 
   if (currentHand.length === 0) {
-    await finishUnoGame(interaction, game, userId);
-    return;
+    return finishGame(interaction, game, userId);
   }
 
   if (card.includes("Skip")) {
@@ -437,5 +404,5 @@ async function applyCardEffect(interaction, game, card, userId) {
     setNextTurn(game, userId);
   }
 
-  await updateTableMessage(interaction.message, game);
+  return renderTable(interaction, game);
 }
