@@ -29,7 +29,7 @@ new ButtonBuilder()
 new ButtonBuilder()
 .setCustomId("gunslinger_surrender")
 .setLabel("Surrender")
-.setStyle(ButtonStyle.Secondary)
+.setStyle(ButtonStyle.Danger)
 
 );
 
@@ -66,7 +66,8 @@ description:`**Ready Status**
 module.exports = {
 
 match(interaction){
-return interaction.customId?.startsWith("gunslinger_");
+return interaction.isButton() &&
+interaction.customId.startsWith("gunslinger_");
 },
 
 async run(interaction){
@@ -142,6 +143,8 @@ ephemeral:true
 
 const winner = interaction.user.id === p1 ? p2 : p1;
 
+/* UNLOCK CHANNEL */
+
 await unlockChannel(interaction.channel,state.originalChannelName);
 
 games.delete(interaction.channelId);
@@ -160,7 +163,7 @@ return;
 
 }
 
-/* MOVES */
+/* MOVE */
 
 if(!state.players.includes(interaction.user.id)){
 return interaction.reply({
@@ -183,7 +186,7 @@ content:"Move locked.",
 ephemeral:true
 });
 
-/* UPDATE READY */
+/* READY STATUS */
 
 await interaction.message.edit({
 embeds:[readyEmbed(state)],
@@ -224,7 +227,9 @@ state.choices = {};
 
 if(state.lives[p1] <= 0 || state.lives[p2] <= 0){
 
-const winner = state.lives[p1] > 0 ? p1 : p2;
+const winner = state.lives[p1] > state.lives[p2] ? p1 : p2;
+
+/* UNLOCK CHANNEL */
 
 await unlockChannel(interaction.channel,state.originalChannelName);
 
