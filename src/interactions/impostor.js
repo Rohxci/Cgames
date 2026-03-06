@@ -2,15 +2,11 @@ const {
 ActionRowBuilder,
 ButtonBuilder,
 ButtonStyle,
-ChannelType,
-PermissionsBitField
+ChannelType
 } = require("discord.js");
 
 const games = require("../systems/games");
 const createEmbed = require("../utils/embed");
-
-const DISCUSSION_TIME = 60000;
-const VOTE_TIME = 30000;
 
 const THEMES = {
 Food:["Pizza","Burger","Pasta","Sushi","Salad","Ice Cream","Steak","Bread","Cheese","Rice","Apple","Banana","Orange","Cake","Soup","Taco","Noodles","Fries","Pancake","Chocolate"],
@@ -76,7 +72,24 @@ components:interaction.message.components
 
 }
 
-/* START GAME */
+/* CANCEL */
+
+if(id==="imp_cancel"){
+
+if(interaction.user.id!==state.host){
+return interaction.reply({content:"Only host can cancel.",ephemeral:true});
+}
+
+games.delete(interaction.channelId);
+
+await interaction.update({
+embeds:[createEmbed("❌ Game cancelled","Lobby closed.")],
+components:[]
+});
+
+}
+
+/* START */
 
 if(id==="imp_start"){
 
@@ -96,6 +109,9 @@ type:ChannelType.PrivateThread
 });
 
 state.thread = thread.id;
+state.revealed = {};
+state.endDiscussionVotes = [];
+state.votes = {};
 
 /* ADD PLAYERS */
 
@@ -103,109 +119,131 @@ for(const p of state.players){
 await thread.members.add(p);
 }
 
-/* PICK CATEGORY */
+/* CATEGORY */
 
 const categories = Object.keys(THEMES);
 const category = categories[Math.floor(Math.random()*categories.length)];
 const word = THEMES[category][Math.floor(Math.random()*20)];
 
-/* PICK IMPOSTOR */
+state.category = category;
+state.word = word;
+state.impostor = state.players[Math.floor(Math.random()*state.players.length)];
 
-const impostor = state.players[Math.floor(Math.random()*state.players.length)];
-state.impostor = impostor;
-
-/* SEND ROLES */
-
-for(const p of state.players){
-
-if(p===impostor){
-
-await interaction.client.users.send(p,{
-embeds:[createEmbed(
-"🎭 Your Role",
-`You are **IMPOSTOR**
-
-Category: **${category}**`
-)]
-});
-
-}else{
-
-await interaction.client.users.send(p,{
-embeds:[createEmbed(
-"🎭 Your Role",
-`You are **CREW**
-
-Category: **${category}**
-Word: **${word}**`
-)]
-});
-
-}
-
-}
-
-/* DISCUSSION */
-
-await thread.send({
-embeds:[createEmbed(
-"💬 Discussion Phase",
-`Discuss for **60 seconds**.
-
-Then voting will start automatically.`
-)]
-});
-
-setTimeout(async()=>{
-
-startVote(interaction,thread,state);
-
-},DISCUSSION_TIME);
+/* MAIN CHANNEL MESSAGE */
 
 await interaction.update({
 embeds:[createEmbed(
-"🎭 Game Started",
-`Game moved to <#${thread.id}>`
+"🎭 Impostor Game Started",
+`The match is happening in: <#${thread.id}>`
 )],
 components:[]
 });
 
+/* THREAD START */
+
+await thread.send({
+
+embeds:[createEmbed(
+"🎭 Game Started",
+"Press **Reveal Role** to see your role."
+)],
+
+components:[
+new ActionRowBuilder().addComponents(
+
+new ButtonBuilder()
+.setCustomId("imp_reveal")
+.setLabel("Reveal Role")
+.setStyle(ButtonStyle.Primary)
+
+)
+]
+
+});
+
+/* DISCUSSION BUTTON */
+
+await thread.send({
+
+embeds:[createEmbed(
+"💬 Discussion",
+"Discuss and press **End Discussion** when ready."
+)],
+
+components:[
+new ActionRowBuilder().addComponents(
+
+new ButtonBuilder()
+.setCustomId("imp_end_discussion")
+.setLabel("End Discussion")
+.setStyle(ButtonStyle.Secondary)
+
+)
+]
+
+});
+
 }
 
-/* VOTE CLICK */
+/* REVEAL ROLE */
 
-if(id.startsWith("imp_vote_")){
+if(id==="imp_reveal"){
 
-const voted = id.split("_")[2];
+if(state.revealed[interaction.user.id]){
+return interaction.reply({content:"You already revealed your role.",ephemeral:true});
+}
 
-if(!state.votes) state.votes={};
+state.revealed[interaction.user.id] = true;
 
-state.votes[interaction.user.id]=voted;
+if(interaction.user.id===state.impostor){
 
-await interaction.reply({
-content:`You voted <@${voted}>`,
+return interaction.reply({
+embeds:[createEmbed(
+"🎭 Your Role",
+`You are **IMPOSTOR**
+
+Category: **${state.category}**`
+)],
 ephemeral:true
 });
 
-/* if all voted */
+}else{
 
-if(Object.keys(state.votes).length===state.players.length){
+return interaction.reply({
+embeds:[createEmbed(
+"🎭 Your Role",
+`You are **CREW**
 
-finishVote(interaction,state);
+Category: **${state.category}**
+Word: **${state.word}**`
+)],
+ephemeral:true
+});
 
 }
 
 }
 
+/* END DISCUSSION */
+
+if(id==="imp_end_discussion"){
+
+if(!state.endDiscussionVotes.includes(interaction.user.id)){
+state.endDiscussionVotes.push(interaction.user.id);
 }
 
-};
+const needed = Math.floor(state.players.length/2)+1;
+
+if(state.endDiscussionVotes.length < needed){
+
+return interaction.reply({
+content:`End discussion votes: ${state.endDiscussionVotes.length}/${needed}`,
+ephemeral:true
+});
+
+}
 
 /* START VOTE */
-
-async function startVote(interaction,thread,state){
-
-state.votes={};
 
 const row = new ActionRowBuilder();
 
@@ -218,55 +256,106 @@ new ButtonBuilder()
 );
 });
 
-await thread.send({
+row.addComponents(
+new ButtonBuilder()
+.setCustomId("imp_force_end_vote")
+.setLabel("End Vote")
+.setStyle(ButtonStyle.Danger)
+);
+
+await interaction.channel.send({
+
 embeds:[createEmbed(
-"🗳 Voting",
-"You have **30 seconds** to vote."
+"🗳 Voting Phase",
+"Vote the impostor."
 )],
+
 components:[row]
+
 });
-
-setTimeout(()=>{
-
-finishVote(interaction,state);
-
-},VOTE_TIME);
 
 }
 
-/* FINISH VOTE */
+/* VOTE */
 
-async function finishVote(interaction,state){
+if(id.startsWith("imp_vote_")){
+
+if(state.votes[interaction.user.id]){
+return interaction.reply({content:"You already voted.",ephemeral:true});
+}
+
+const voted = id.split("_")[2];
+state.votes[interaction.user.id] = voted;
+
+await interaction.reply({
+content:`You voted <@${voted}>`,
+ephemeral:true
+});
+
+if(Object.keys(state.votes).length === state.players.length){
+finishGame(interaction,state);
+}
+
+}
+
+/* FORCE END VOTE */
+
+if(id==="imp_force_end_vote"){
+
+if(interaction.user.id!==state.host){
+return interaction.reply({content:"Only host can end vote.",ephemeral:true});
+}
+
+finishGame(interaction,state);
+
+}
+
+}
+
+};
+
+/* FINISH GAME */
+
+async function finishGame(interaction,state){
 
 const votes = {};
 
 Object.values(state.votes).forEach(v=>{
-votes[v]=(votes[v]||0)+1;
+votes[v] = (votes[v]||0)+1;
 });
 
 let voted = Object.keys(votes).sort((a,b)=>votes[b]-votes[a])[0];
 
-games.delete(interaction.channelId);
+let results = "";
+
+for(const voter in state.votes){
+results += `<@${voter}> → <@${state.votes[voter]}>\n`;
+}
 
 if(voted===state.impostor){
 
-interaction.channel.send({
+await interaction.channel.send({
 embeds:[createEmbed(
 "🎉 Crew Wins",
-`Impostor was <@${state.impostor}>`
+`${results}
+
+Impostor was <@${state.impostor}>`
 )]
 });
 
 }else{
 
-interaction.channel.send({
+await interaction.channel.send({
 embeds:[createEmbed(
 "💀 Impostor Wins",
-`Crew voted <@${voted}>
+`${results}
+
 Real impostor: <@${state.impostor}>`
 )]
 });
 
 }
+
+games.delete(interaction.channelId);
 
 }
