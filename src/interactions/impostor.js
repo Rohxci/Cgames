@@ -62,7 +62,9 @@ state.players.push(interaction.user.id);
 await interaction.update({
 embeds:[createEmbed(
 "🎭 Impostor Lobby",
-`Players: ${state.players.length}
+`Host: <@${state.host}>
+
+Players: ${state.players.length}
 
 ${state.players.map(p=>`• <@${p}>`).join("\n")}`
 )],
@@ -77,10 +79,31 @@ if(id==="imp_leave"){
 
 state.players = state.players.filter(p=>p!==interaction.user.id);
 
+/* TRANSFER HOST */
+
+if(interaction.user.id === state.host && state.players.length > 0){
+state.host = state.players[0];
+}
+
+/* END GAME IF EMPTY */
+
+if(state.players.length === 0){
+
+games.delete(interaction.channel.id);
+
+return interaction.update({
+embeds:[createEmbed("❌ Game closed","All players left.")],
+components:[]
+});
+
+}
+
 await interaction.update({
 embeds:[createEmbed(
 "🎭 Impostor Lobby",
-`Players: ${state.players.length}
+`Host: <@${state.host}>
+
+Players: ${state.players.length}
 
 ${state.players.map(p=>`• <@${p}>`).join("\n")}`
 )],
@@ -180,7 +203,7 @@ new ButtonBuilder()
 
 }
 
-/* REVEAL */
+/* REVEAL ROLE */
 
 if(id==="imp_reveal"){
 
