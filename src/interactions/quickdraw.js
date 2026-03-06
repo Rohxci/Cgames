@@ -94,10 +94,7 @@ module.exports = {
         components: [drawRow(false), surrenderRow(false)]
       });
 
-      /* LOCK CHANNEL */
-
       const currentGame = games.get(interaction.channelId);
-
       currentGame.originalChannelName = await lockChannel(
         interaction.channel,
         [challenger, opponent]
@@ -115,7 +112,6 @@ module.exports = {
         current.drawStartedAt = Date.now();
 
         try {
-
           await interaction.message.edit({
             embeds: [
               createEmbed(
@@ -125,11 +121,8 @@ module.exports = {
             ],
             components: [drawRow(true), surrenderRow(false)]
           });
-
         } catch {
-
           games.delete(interaction.channelId);
-
         }
 
       }, delayMs);
@@ -189,7 +182,6 @@ module.exports = {
           : game.player1;
 
       await unlockChannel(interaction.channel, game.originalChannelName);
-
       games.delete(interaction.channelId);
 
       await interaction.update({
@@ -237,7 +229,6 @@ module.exports = {
       }
 
       game.fired = true;
-
       safeClearTimer(game);
 
       const reactionMs = game.drawStartedAt
@@ -245,7 +236,6 @@ module.exports = {
         : null;
 
       await unlockChannel(interaction.channel, game.originalChannelName);
-
       games.delete(interaction.channelId);
 
       const text =
