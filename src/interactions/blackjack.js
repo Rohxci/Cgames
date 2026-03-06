@@ -7,7 +7,7 @@ ButtonStyle
 const games = require("../systems/games");
 const createEmbed = require("../utils/embed");
 
-/* card helpers */
+/* cards */
 
 const suits = ["♠","♥","♦","♣"];
 const ranks = ["A","2","3","4","5","6","7","8","9","10","J","Q","K"];
@@ -28,6 +28,10 @@ return deck.sort(()=>Math.random()-0.5);
 
 function cardString(c){
 return `${c.rank}${c.suit}`;
+}
+
+function handString(hand){
+return hand.map(cardString).join(" ");
 }
 
 function value(hand){
@@ -55,10 +59,6 @@ return total;
 
 }
 
-function handString(hand){
-return hand.map(cardString).join(" ");
-}
-
 /* buttons */
 
 function gameButtons(){
@@ -79,6 +79,24 @@ new ButtonBuilder()
 .setCustomId("bj_surrender")
 .setLabel("Surrender")
 .setStyle(ButtonStyle.Danger)
+
+);
+
+}
+
+function resultButtons(){
+
+return new ActionRowBuilder().addComponents(
+
+new ButtonBuilder()
+.setCustomId("bj_again")
+.setLabel("Play Again")
+.setStyle(ButtonStyle.Success),
+
+new ButtonBuilder()
+.setCustomId("bj_finish")
+.setLabel("Finish Game")
+.setStyle(ButtonStyle.Secondary)
 
 );
 
@@ -119,7 +137,7 @@ player,
 deck,
 playerHand,
 dealerHand,
-phase:"player"
+plays:1
 });
 
 const embed=createEmbed(
@@ -129,7 +147,9 @@ ${handString(playerHand)}
 Value: ${value(playerHand)}
 
 Dealer
-${cardString(dealerHand[0])} ?`
+${cardString(dealerHand[0])} ?
+
+Round 1 / 10`
 );
 
 await interaction.update({
@@ -160,7 +180,7 @@ return;
 
 }
 
-/* GAME */
+/* GET GAME */
 
 const game = games.get(interaction.channelId);
 if(!game || game.type!=="blackjack") return;
@@ -180,21 +200,26 @@ const val=value(game.playerHand);
 
 if(val>21){
 
-games.delete(interaction.channelId);
-
-return interaction.update({
-
-embeds:[createEmbed(
-"💥 Bust",
-`You
+const text=`You
 ${handString(game.playerHand)}
 Value: ${val}
 
-Dealer wins`
-)],
-components:[]
+💥 Bust
+
+Dealer wins
+
+Round ${game.plays} / 10`;
+
+await interaction.update({
+
+embeds:[createEmbed("♠️ Blackjack Result",text)],
+components: game.plays>=10 ? [] : [resultButtons()]
 
 });
+
+if(game.plays>=10) games.delete(interaction.channelId);
+
+return;
 
 }
 
@@ -205,7 +230,9 @@ ${handString(game.playerHand)}
 Value: ${val}
 
 Dealer
-${cardString(game.dealerHand[0])} ?`
+${cardString(game.dealerHand[0])} ?
+
+Round ${game.plays} / 10`
 );
 
 await interaction.update({
@@ -220,8 +247,6 @@ return;
 /* STAND */
 
 if(id==="bj_stand"){
-
-/* dealer turn */
 
 let dealerVal=value(game.dealerHand);
 
@@ -239,13 +264,7 @@ else if(dealerVal>playerVal) result="Dealer wins";
 else if(playerVal>dealerVal) result="🎉 You win";
 else result="Push";
 
-games.delete(interaction.channelId);
-
-await interaction.update({
-
-embeds:[createEmbed(
-"♠️ Blackjack Result",
-`You
+const text=`You
 ${handString(game.playerHand)}
 Value: ${playerVal}
 
@@ -253,11 +272,18 @@ Dealer
 ${handString(game.dealerHand)}
 Value: ${dealerVal}
 
-${result}`
-)],
-components:[]
+${result}
+
+Round ${game.plays} / 10`;
+
+await interaction.update({
+
+embeds:[createEmbed("♠️ Blackjack Result",text)],
+components: game.plays>=10 ? [] : [resultButtons()]
 
 });
+
+if(game.plays>=10) games.delete(interaction.channelId);
 
 return;
 
@@ -267,19 +293,91 @@ return;
 
 if(id==="bj_surrender"){
 
-games.delete(interaction.channelId);
+const text=`🏳️ You surrendered
+
+Dealer wins
+
+Round ${game.plays} / 10`;
 
 await interaction.update({
 
+embeds:[createEmbed("♠️ Blackjack Result",text)],
+components: game.plays>=10 ? [] : [resultButtons()]
+
+});
+
+if(game.plays>=10) games.delete(interaction.channelId);
+
+return;
+
+}
+
+/* PLAY AGAIN */
+
+if(id==="bj_again"){
+
+game.plays++;
+
+if(game.plays>10){
+
+games.delete(interaction.channelId);
+
+return interaction.update({
+
 embeds:[createEmbed(
-"🏳️ Surrender",
-"Dealer wins"
+"♠️ Blackjack",
+"You played 10 rounds.\n\nStart a new game with /blackjack."
 )],
 components:[]
 
 });
 
+}
+
+/* new round */
+
+const deck=createDeck();
+
+game.deck=deck;
+game.playerHand=[deck.pop(),deck.pop()];
+game.dealerHand=[deck.pop(),deck.pop()];
+
+const embed=createEmbed(
+"♠️ Blackjack",
+`You
+${handString(game.playerHand)}
+Value: ${value(game.playerHand)}
+
+Dealer
+${cardString(game.dealerHand[0])} ?
+
+Round ${game.plays} / 10`
+);
+
+await interaction.update({
+embeds:[embed],
+components:[gameButtons()]
+});
+
 return;
+
+}
+
+/* FINISH */
+
+if(id==="bj_finish"){
+
+games.delete(interaction.channelId);
+
+await interaction.update({
+
+embeds:[createEmbed(
+"♠️ Blackjack",
+"Game finished."
+)],
+components:[]
+
+});
 
 }
 
