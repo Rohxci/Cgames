@@ -44,7 +44,7 @@ return c===tc || v===tv;
 
 }
 
-/* embed */
+/* table */
 
 function table(g){
 
@@ -63,7 +63,7 @@ Cards
 
 }
 
-/* table buttons */
+/* buttons */
 
 function tableButtons(){
 
@@ -113,7 +113,6 @@ module.exports={
 match(i){
 
 if(i.isButton()) return i.customId.startsWith("uno_");
-
 if(i.isStringSelectMenu()) return i.customId.startsWith("uno_");
 
 return false;
@@ -253,7 +252,7 @@ return;
 
 }
 
-/* PLAY */
+/* PLAY CARD */
 
 if(id==="uno_play"){
 
@@ -268,7 +267,13 @@ const card=hand[index];
 if(!playable(card,g.top))
 return i.reply({content:"You cannot play that card.",ephemeral:true});
 
+/* remove card */
+
 hand.splice(index,1);
+
+/* acknowledge interaction */
+
+await i.deferUpdate();
 
 /* +2 */
 
@@ -325,12 +330,20 @@ return;
 
 }
 
-await i.update({
+/* update table */
 
+const msgs=await i.channel.messages.fetch({limit:10});
+
+const tableMsg=msgs.find(m=>m.author.id===i.client.user.id && m.embeds.length);
+
+if(tableMsg){
+
+await tableMsg.edit({
 embeds:[table(g)],
 components:[tableButtons()]
-
 });
+
+}
 
 }
 
