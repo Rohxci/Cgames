@@ -1,0 +1,95 @@
+const {
+SlashCommandBuilder,
+ActionRowBuilder,
+ButtonBuilder,
+ButtonStyle
+} = require("discord.js");
+
+const channelCheck = require("../utils/channelCheck");
+const createEmbed = require("../utils/embed");
+const games = require("../systems/games");
+
+const MAX_PLAYERS = 10;
+
+function lobbyEmbed(state){
+
+const players = state.players.map(p => `• <@${p}>`).join("\n");
+
+return {
+title: "🎭 Impostor Lobby",
+description: `Host: <@${state.hostId}>
+
+Players: ${state.players.length}/${MAX_PLAYERS}
+
+Players
+${players}`
+};
+
+}
+
+function lobbyButtons(){
+
+return [
+new ActionRowBuilder().addComponents(
+
+new ButtonBuilder()
+.setCustomId("imp_join")
+.setLabel("Join")
+.setStyle(ButtonStyle.Success),
+
+new ButtonBuilder()
+.setCustomId("imp_leave")
+.setLabel("Leave")
+.setStyle(ButtonStyle.Secondary),
+
+new ButtonBuilder()
+.setCustomId("imp_start")
+.setLabel("Start")
+.setStyle(ButtonStyle.Primary),
+
+new ButtonBuilder()
+.setCustomId("imp_cancel")
+.setLabel("Cancel")
+.setStyle(ButtonStyle.Danger)
+
+)
+];
+
+}
+
+module.exports = {
+
+data: new SlashCommandBuilder()
+.setName("impostor")
+.setDescription("Start an Impostor game"),
+
+async execute(interaction){
+
+if(!channelCheck(interaction)) return;
+
+if(games.get(interaction.channelId)){
+return interaction.reply({
+content:"A game is already running in this channel.",
+ephemeral:true
+});
+}
+
+const state = {
+type:"impostor",
+hostId: interaction.user.id,
+players:[interaction.user.id],
+phase:"lobby"
+};
+
+games.create(interaction.channelId,state);
+
+await interaction.reply({
+
+embeds:[lobbyEmbed(state)],
+components:lobbyButtons()
+
+});
+
+}
+
+};
