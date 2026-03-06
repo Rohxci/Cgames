@@ -29,7 +29,7 @@ new ButtonBuilder()
 new ButtonBuilder()
 .setCustomId("gunslinger_surrender")
 .setLabel("Surrender")
-.setStyle(ButtonStyle.Danger)
+.setStyle(ButtonStyle.Secondary)
 
 );
 
@@ -66,8 +66,7 @@ description:`**Ready Status**
 module.exports = {
 
 match(interaction){
-return interaction.isButton() &&
-interaction.customId.startsWith("gunslinger_");
+return interaction.customId?.startsWith("gunslinger_");
 },
 
 async run(interaction){
@@ -102,8 +101,6 @@ Choose your move.`
 }],
 components:[moveButtons()]
 });
-
-/* LOCK CHANNEL */
 
 state.originalChannelName = await lockChannel(
 interaction.channel,
@@ -143,10 +140,7 @@ ephemeral:true
 
 const winner = interaction.user.id === p1 ? p2 : p1;
 
-/* UNLOCK CHANNEL */
-
 await unlockChannel(interaction.channel,state.originalChannelName);
-
 games.delete(interaction.channelId);
 
 await interaction.update({
@@ -163,7 +157,7 @@ return;
 
 }
 
-/* MOVE */
+/* MOVES */
 
 if(!state.players.includes(interaction.user.id)){
 return interaction.reply({
@@ -186,26 +180,18 @@ content:"Move locked.",
 ephemeral:true
 });
 
-/* READY STATUS */
-
 await interaction.message.edit({
 embeds:[readyEmbed(state)],
 components:[moveButtons()]
 });
-
-/* WAIT BOTH */
 
 if(Object.keys(state.choices).length < 2) return;
 
 const c1 = state.choices[p1];
 const c2 = state.choices[p2];
 
-/* RELOAD */
-
 if(c1 === "gunslinger_reload") state.ammo[p1]++;
 if(c2 === "gunslinger_reload") state.ammo[p2]++;
-
-/* ATTACK */
 
 if(c1 === "gunslinger_attack" && state.ammo[p1] > 0){
 state.ammo[p1]--;
@@ -227,12 +213,9 @@ state.choices = {};
 
 if(state.lives[p1] <= 0 || state.lives[p2] <= 0){
 
-const winner = state.lives[p1] > state.lives[p2] ? p1 : p2;
-
-/* UNLOCK CHANNEL */
+const winner = state.lives[p1] > 0 ? p1 : p2;
 
 await unlockChannel(interaction.channel,state.originalChannelName);
-
 games.delete(interaction.channelId);
 
 await interaction.channel.send({
