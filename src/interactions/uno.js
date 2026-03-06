@@ -10,7 +10,7 @@ const games = require("../systems/games");
 
 const COLORS = ["🔴","🟡","🟢","🔵"];
 
-/* BUILD DECK */
+/* DECK */
 
 function buildDeck(){
 
@@ -35,7 +35,7 @@ return deck.sort(()=>Math.random()-0.5);
 
 }
 
-/* PLAYABLE CARDS */
+/* PLAYABLE */
 
 function playable(hand,top){
 
@@ -53,7 +53,7 @@ return c===tc || v===tv;
 
 }
 
-/* EMBED */
+/* TABLE EMBED */
 
 function table(state){
 
@@ -92,7 +92,7 @@ new ButtonBuilder()
 
 }
 
-/* CARD MENU */
+/* MENU */
 
 function menu(cards){
 
@@ -164,8 +164,6 @@ ephemeral:true
 });
 }
 
-/* CREATE PRIVATE THREAD */
-
 const thread=await interaction.channel.threads.create({
 name:`uno-${interaction.user.username}`,
 type:ChannelType.PrivateThread,
@@ -173,12 +171,8 @@ autoArchiveDuration:60,
 invitable:false
 });
 
-/* ADD PLAYERS */
-
 await thread.members.add(p1);
 await thread.members.add(p2);
-
-/* BUILD GAME */
 
 const deck=buildDeck();
 
@@ -187,11 +181,8 @@ const hand2=deck.splice(0,7);
 
 const top=deck.shift();
 
-/* SAVE GAME USING THREAD ID */
-
 games.create(thread.id,{
 type:"uno",
-threadId:thread.id,
 player1:p1,
 player2:p2,
 turn:p1,
@@ -212,7 +203,7 @@ const state=games.get(thread.id);
 await thread.send({
 embeds:[table(state)],
 components:[
-menu(playable(hand1,top)),
+menu(playable(hand1,top).length ? playable(hand1,top) : hand1),
 buttons()
 ]
 });
@@ -236,8 +227,8 @@ ephemeral:true
 
 await interaction.update({
 content:"Challenge declined.",
-components:[],
-embeds:[]
+embeds:[],
+components:[]
 });
 
 return;
@@ -259,15 +250,15 @@ ephemeral:true
 
 await interaction.update({
 content:"Challenge cancelled.",
-components:[],
-embeds:[]
+embeds:[],
+components:[]
 });
 
 return;
 
 }
 
-/* GET GAME FROM THREAD */
+/* GAME */
 
 const game=games.get(interaction.channelId);
 if(!game) return;
@@ -295,9 +286,21 @@ interaction.user.id===game.player1
 ?game.player2
 :game.player1;
 
+const nextHand=
+game.turn===game.player1
+?game.hand1
+:game.hand2;
+
+const cards=playable(nextHand,game.top);
+
+const menuCards = cards.length ? cards : nextHand;
+
 await interaction.update({
 embeds:[table(game)],
-components:[buttons()]
+components:[
+menu(menuCards),
+buttons()
+]
 });
 
 return;
@@ -342,25 +345,26 @@ hand=game.hand1;
 else
 hand=game.hand2;
 
-const i=hand.indexOf(card);
-if(i===-1) return;
+const index=hand.indexOf(card);
 
-hand.splice(i,1);
+if(index===-1) return;
+
+hand.splice(index,1);
 
 if(card==="🌈 Wild"){
-
-game.pendingWild=true;
 
 await interaction.update({
 content:"Choose color",
 components:[colorMenu()]
 });
 
+game.pendingWildPlayer=interaction.user.id;
+
 return;
 
 }
 
-apply(card,game,interaction);
+applyCard(card,game,interaction);
 
 }
 
@@ -368,15 +372,20 @@ apply(card,game,interaction);
 
 if(id==="uno_color"){
 
+if(game.pendingWildPlayer!==interaction.user.id)
+return;
+
 const color=interaction.values[0];
 
 game.top=`${color} Wild`;
 
-apply(null,game,interaction);
+game.pendingWildPlayer=null;
+
+applyCard(null,game,interaction);
 
 }
 
-function apply(card,game,interaction){
+function applyCard(card,game,interaction){
 
 if(card && card.includes("+2")){
 
@@ -431,10 +440,14 @@ return;
 
 }
 
+const cards=playable(hand,game.top);
+
+const menuCards=cards.length ? cards : hand;
+
 interaction.update({
 embeds:[table(game)],
 components:[
-menu(playable(hand,game.top)),
+menu(menuCards),
 buttons()
 ]
 });
