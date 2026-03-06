@@ -33,23 +33,23 @@ return `${c.r}${c.s}`;
 
 function handValue(hand){
 
-let value=0;
+let v=0;
 let aces=0;
 
 for(const c of hand){
 
-if(["J","Q","K"].includes(c.r)) value+=10;
-else if(c.r==="A"){value+=11;aces++;}
-else value+=parseInt(c.r);
+if(["J","Q","K"].includes(c.r)) v+=10;
+else if(c.r==="A"){v+=11;aces++;}
+else v+=parseInt(c.r);
 
 }
 
-while(value>21 && aces>0){
-value-=10;
+while(v>21 && aces>0){
+v-=10;
 aces--;
 }
 
-return value;
+return v;
 
 }
 
@@ -86,7 +86,7 @@ return "dealer";
 
 }
 
-/* DEALER TURN */
+/* DEALER */
 
 function dealerTurn(state){
 
@@ -101,9 +101,9 @@ v=handValue(state.dealer);
 
 }
 
-/* CALCULATE RESULT */
+/* RESULT */
 
-function calculateResult(state){
+function calculate(state){
 
 const dealerValue=handValue(state.dealer);
 
@@ -134,7 +134,7 @@ return {dealerValue,winners};
 
 }
 
-/* TABLE DISPLAY */
+/* TABLE */
 
 async function sendTable(thread,state){
 
@@ -249,8 +249,6 @@ new ButtonBuilder()
 
 }
 
-/* MAIN HANDLER */
-
 module.exports={
 
 match(i){
@@ -259,25 +257,131 @@ return i.isButton() && i.customId.startsWith("bjd_");
 
 async run(interaction){
 
-const state=findGame(interaction.channel);
-if(!state) return;
+let state=findGame(interaction.channel);
 
 const id=interaction.customId;
+
+/* LOBBY BUTTONS */
+
+if(id==="bjd_join"){
+
+if(state.players.includes(interaction.user.id)) return;
+
+if(state.players.length>=6){
+return interaction.reply({content:"Table is full.",ephemeral:true});
+}
+
+state.players.push(interaction.user.id);
+
+await interaction.update({
+embeds:[{
+title:"♠️ Blackjack Table",
+description:`Host: <@${state.host}>
+
+Players (${state.players.length}/6)
+${state.players.map(p=>`• <@${p}>`).join("\n")}
+
+Minimum players: 2
+Maximum players: 6`
+}],
+components:interaction.message.components
+});
+
+return;
+
+}
+
+if(id==="bjd_leave"){
+
+state.players=state.players.filter(p=>p!==interaction.user.id);
+
+if(interaction.user.id===state.host && state.players.length>0){
+state.host=state.players[0];
+}
+
+await interaction.update({
+embeds:[{
+title:"♠️ Blackjack Table",
+description:`Host: <@${state.host}>
+
+Players (${state.players.length}/6)
+${state.players.map(p=>`• <@${p}>`).join("\n")}`
+}],
+components:interaction.message.components
+});
+
+return;
+
+}
+
+if(id==="bjd_cancel"){
+
+if(interaction.user.id!==state.host){
+return interaction.reply({content:"Only host can cancel.",ephemeral:true});
+}
+
+games.delete(interaction.channelId);
+
+await interaction.update({
+embeds:[createEmbed("❌ Blackjack","Game cancelled.")],
+components:[]
+});
+
+return;
+
+}
+
+/* START */
+
+if(id==="bjd_start"){
+
+if(interaction.user.id!==state.host){
+return interaction.reply({content:"Only host can start.",ephemeral:true});
+}
+
+if(state.players.length<2){
+return interaction.reply({content:"Need at least 2 players.",ephemeral:true});
+}
+
+const thread=await interaction.channel.threads.create({
+name:"blackjack-table",
+type:ChannelType.PrivateThread
+});
+
+state.thread=thread.id;
+
+for(const p of state.players){
+await thread.members.add(p);
+}
+
+await interaction.update({
+embeds:[createEmbed(
+"♠️ Blackjack Table",
+`The match is happening in: <#${thread.id}>`
+)],
+components:[]
+});
+
+startRound(thread,state);
+
+return;
+
+}
 
 /* HIT */
 
 if(id==="bjd_hit"){
 
-const player=interaction.user.id;
+const p=interaction.user.id;
 
-if(player!==state.players[state.turn]){
+if(p!==state.players[state.turn]){
 return interaction.reply({content:"Not your turn.",ephemeral:true});
 }
 
-state.hands[player].push(state.deck.pop());
+state.hands[p].push(state.deck.pop());
 
-if(handValue(state.hands[player])>21){
-state.bust.push(player);
+if(handValue(state.hands[p])>21){
+state.bust.push(p);
 }
 
 const next=nextPlayer(state);
@@ -286,17 +390,17 @@ if(next==="dealer"){
 
 dealerTurn(state);
 
-const result=calculateResult(state);
+const result=calculate(state);
 
-const mainChannel=interaction.channel.parent;
+const main=interaction.channel.parent;
 
 let text=`Dealer — ${result.dealerValue}\n\n`;
 
-for(const p of state.players){
+for(const pl of state.players){
 
-const user=await interaction.client.users.fetch(p);
+const user=await interaction.client.users.fetch(pl);
 
-text+=`${user.username} — ${state.bust.includes(p) ? "bust" : handValue(state.hands[p])}\n`;
+text+=`${user.username} — ${state.bust.includes(pl) ? "bust" : handValue(state.hands[pl])}\n`;
 
 }
 
@@ -316,17 +420,15 @@ text+=`\nWinner: ${names.join(", ")}`;
 
 }
 
-await mainChannel.send({
-
+await main.send({
 content:state.players.map(p=>`<@${p}>`).join(" "),
 embeds:[createEmbed("♠️ Blackjack Results",text)]
-
 });
 
 if(state.round>=20){
 
 await interaction.channel.delete();
-games.delete(mainChannel.id);
+games.delete(main.id);
 return;
 
 }
@@ -347,13 +449,13 @@ sendTable(interaction.channel,state);
 
 if(id==="bjd_stand"){
 
-const player=interaction.user.id;
+const p=interaction.user.id;
 
-if(player!==state.players[state.turn]){
+if(p!==state.players[state.turn]){
 return interaction.reply({content:"Not your turn.",ephemeral:true});
 }
 
-state.stood.push(player);
+state.stood.push(p);
 
 const next=nextPlayer(state);
 
@@ -361,17 +463,17 @@ if(next==="dealer"){
 
 dealerTurn(state);
 
-const result=calculateResult(state);
+const result=calculate(state);
 
-const mainChannel=interaction.channel.parent;
+const main=interaction.channel.parent;
 
 let text=`Dealer — ${result.dealerValue}\n\n`;
 
-for(const p of state.players){
+for(const pl of state.players){
 
-const user=await interaction.client.users.fetch(p);
+const user=await interaction.client.users.fetch(pl);
 
-text+=`${user.username} — ${state.bust.includes(p) ? "bust" : handValue(state.hands[p])}\n`;
+text+=`${user.username} — ${state.bust.includes(pl) ? "bust" : handValue(state.hands[pl])}\n`;
 
 }
 
@@ -391,17 +493,15 @@ text+=`\nWinner: ${names.join(", ")}`;
 
 }
 
-await mainChannel.send({
-
+await main.send({
 content:state.players.map(p=>`<@${p}>`).join(" "),
 embeds:[createEmbed("♠️ Blackjack Results",text)]
-
 });
 
 if(state.round>=20){
 
 await interaction.channel.delete();
-games.delete(mainChannel.id);
+games.delete(main.id);
 return;
 
 }
