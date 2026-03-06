@@ -8,6 +8,28 @@ ChannelType
 const games = require("../systems/games");
 const createEmbed = require("../utils/embed");
 
+/* FIND GAME (CHANNEL OR THREAD) */
+
+function findGame(channelId){
+
+const map = games._games || {};
+
+for(const id in map){
+
+const g = map[id];
+
+if(id === channelId || g.thread === channelId){
+return g;
+}
+
+}
+
+return null;
+
+}
+
+/* THEMES */
+
 const THEMES = {
 Food:["Pizza","Burger","Pasta","Sushi","Salad","Ice Cream","Steak","Bread","Cheese","Rice","Apple","Banana","Orange","Cake","Soup","Taco","Noodles","Fries","Pancake","Chocolate"],
 Animals:["Dog","Cat","Lion","Tiger","Elephant","Bear","Wolf","Fox","Monkey","Zebra","Horse","Cow","Sheep","Goat","Rabbit","Deer","Shark","Dolphin","Eagle","Owl"],
@@ -27,7 +49,7 @@ return interaction.isButton() && interaction.customId.startsWith("imp_");
 
 async run(interaction){
 
-const state = games.get(interaction.channelId);
+const state = findGame(interaction.channelId);
 if(!state) return;
 
 const id = interaction.customId;
@@ -80,7 +102,7 @@ if(interaction.user.id!==state.host){
 return interaction.reply({content:"Only host can cancel.",ephemeral:true});
 }
 
-games.delete(interaction.channelId);
+games.delete(state.channelId);
 
 await interaction.update({
 embeds:[createEmbed("❌ Game cancelled","Lobby closed.")],
@@ -101,8 +123,6 @@ if(state.players.length<2){
 return interaction.reply({content:"Need at least 2 players.",ephemeral:true});
 }
 
-/* THREAD */
-
 const thread = await interaction.channel.threads.create({
 name:"🎭 impostor-game",
 type:ChannelType.PrivateThread
@@ -113,13 +133,9 @@ state.revealed = {};
 state.endDiscussionVotes = [];
 state.votes = {};
 
-/* ADD PLAYERS */
-
 for(const p of state.players){
 await thread.members.add(p);
 }
-
-/* CATEGORY */
 
 const categories = Object.keys(THEMES);
 const category = categories[Math.floor(Math.random()*categories.length)];
@@ -129,8 +145,6 @@ state.category = category;
 state.word = word;
 state.impostor = state.players[Math.floor(Math.random()*state.players.length)];
 
-/* MAIN CHANNEL MESSAGE */
-
 await interaction.update({
 embeds:[createEmbed(
 "🎭 Impostor Game Started",
@@ -139,48 +153,34 @@ embeds:[createEmbed(
 components:[]
 });
 
-/* THREAD START */
-
 await thread.send({
-
 embeds:[createEmbed(
 "🎭 Game Started",
 "Press **Reveal Role** to see your role."
 )],
-
 components:[
 new ActionRowBuilder().addComponents(
-
 new ButtonBuilder()
 .setCustomId("imp_reveal")
 .setLabel("Reveal Role")
 .setStyle(ButtonStyle.Primary)
-
 )
 ]
-
 });
 
-/* DISCUSSION BUTTON */
-
 await thread.send({
-
 embeds:[createEmbed(
 "💬 Discussion",
 "Discuss and press **End Discussion** when ready."
 )],
-
 components:[
 new ActionRowBuilder().addComponents(
-
 new ButtonBuilder()
 .setCustomId("imp_end_discussion")
 .setLabel("End Discussion")
 .setStyle(ButtonStyle.Secondary)
-
 )
 ]
-
 });
 
 }
@@ -243,8 +243,6 @@ ephemeral:true
 
 }
 
-/* START VOTE */
-
 const row = new ActionRowBuilder();
 
 state.players.forEach(p=>{
@@ -264,14 +262,11 @@ new ButtonBuilder()
 );
 
 await interaction.channel.send({
-
 embeds:[createEmbed(
 "🗳 Voting Phase",
 "Vote the impostor."
 )],
-
 components:[row]
-
 });
 
 }
@@ -356,6 +351,6 @@ Real impostor: <@${state.impostor}>`
 
 }
 
-games.delete(interaction.channelId);
+games.delete(state.channelId);
 
 }
