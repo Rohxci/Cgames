@@ -6,6 +6,7 @@ ButtonStyle
 
 const createEmbed = require("../utils/embed");
 const games = require("../systems/games");
+const { lockChannel, unlockChannel } = require("../systems/channelLock");
 
 function checkWin(board) {
 
@@ -105,6 +106,11 @@ turn:challenger,
 board
 });
 
+/* LOCK CHANNEL */
+
+const game = games.get(interaction.channelId);
+game.originalChannelName = await lockChannel(interaction.channel,[challenger,opponent]);
+
 const embed = createEmbed(
 "🎮 TicTacToe",
 `<@${challenger}> vs <@${opponent}>\n\nTurn: <@${challenger}>`
@@ -157,6 +163,8 @@ ephemeral:true
 const endedBy = interaction.user.id;
 const locked = buildBoardRows(game.board,"all");
 
+await unlockChannel(interaction.channel, game.originalChannelName);
+
 games.delete(interaction.channelId);
 
 await interaction.update({
@@ -195,6 +203,8 @@ if (winner) {
 const winnerId = winner === "❌" ? game.player1 : game.player2;
 const locked = buildBoardRows(game.board,"all");
 
+await unlockChannel(interaction.channel, game.originalChannelName);
+
 games.delete(interaction.channelId);
 
 await interaction.update({
@@ -210,6 +220,9 @@ return;
 if (checkDraw(game.board)) {
 
 const locked = buildBoardRows(game.board,"all");
+
+await unlockChannel(interaction.channel, game.originalChannelName);
+
 games.delete(interaction.channelId);
 
 await interaction.update({
