@@ -10,7 +10,7 @@ const games = require("../systems/games");
 
 const COLORS = ["🔴","🟡","🟢","🔵"];
 
-/* BUILD DECK */
+/* DECK */
 
 function buildDeck(){
 
@@ -35,7 +35,7 @@ return deck.sort(()=>Math.random()-0.5);
 
 }
 
-/* PLAYABLE CARDS */
+/* PLAYABLE */
 
 function playable(hand,top){
 
@@ -53,7 +53,7 @@ return c===tc || v===tv;
 
 }
 
-/* TABLE EMBED */
+/* TABLE */
 
 function table(state){
 
@@ -92,7 +92,7 @@ new ButtonBuilder()
 
 }
 
-/* CARD MENU */
+/* MENU */
 
 function menu(cards){
 
@@ -110,7 +110,7 @@ value:c
 
 }
 
-/* COLOR MENU */
+/* COLOR */
 
 function colorMenu(){
 
@@ -164,20 +164,14 @@ ephemeral:true
 });
 }
 
-/* CREATE PRIVATE THREAD */
-
 const thread=await interaction.channel.threads.create({
 name:`uno-${interaction.user.username}`,
 type:ChannelType.PrivateThread,
 autoArchiveDuration:60
 });
 
-/* ADD PLAYERS */
-
 await thread.members.add(p1);
 await thread.members.add(p2);
-
-/* CREATE GAME */
 
 const deck=buildDeck();
 
@@ -194,18 +188,15 @@ turn:p1,
 deck,
 hand1,
 hand2,
-top
+top,
+mainChannel:interaction.channel.id
 });
-
-/* UPDATE INVITE */
 
 await interaction.update({
 content:`🃏 UNO started in <#${thread.id}>`,
-embeds:[],
-components:[]
+components:[],
+embeds:[]
 });
-
-/* SEND TABLE */
 
 const game=games.get(thread.id);
 
@@ -236,8 +227,8 @@ ephemeral:true
 
 await interaction.update({
 content:"Challenge declined.",
-embeds:[],
-components:[]
+components:[],
+embeds:[]
 });
 
 return;
@@ -259,15 +250,15 @@ ephemeral:true
 
 await interaction.update({
 content:"Challenge cancelled.",
-embeds:[],
-components:[]
+components:[],
+embeds:[]
 });
 
 return;
 
 }
 
-/* GET GAME */
+/* GAME */
 
 const game=games.get(interaction.channelId);
 if(!game) return;
@@ -276,12 +267,9 @@ if(!game) return;
 
 if(id==="uno_draw"){
 
-if(interaction.user.id!==game.turn){
-return interaction.reply({
-content:"Not your turn.",
-ephemeral:true
-});
-}
+await interaction.deferUpdate();
+
+if(interaction.user.id!==game.turn) return;
 
 const card=game.deck.shift();
 
@@ -302,9 +290,9 @@ game.turn===game.player1
 
 const cards=playable(nextHand,game.top);
 
-const menuCards=cards.length ? cards : nextHand;
+const menuCards=cards.length?cards:nextHand;
 
-await interaction.update({
+await interaction.message.edit({
 embeds:[table(game)],
 components:[
 menu(menuCards),
@@ -320,22 +308,20 @@ return;
 
 if(id==="uno_surrender"){
 
+await interaction.deferUpdate();
+
 const winner=
 interaction.user.id===game.player1
 ?game.player2
 :game.player1;
 
+const main=interaction.guild.channels.cache.get(game.mainChannel);
+
+await main.send(`🃏 UNO Duel finished\nWinner: <@${winner}>`);
+
 games.delete(interaction.channelId);
 
-await interaction.update({
-embeds:[{
-title:"🃏 UNO Duel",
-description:`${interaction.user} surrendered.
-
-Winner: <@${winner}>`
-}],
-components:[]
-});
+await interaction.channel.delete();
 
 return;
 
@@ -344,6 +330,8 @@ return;
 /* PLAY CARD */
 
 if(id==="uno_play"){
+
+await interaction.deferUpdate();
 
 const card=interaction.values[0];
 
@@ -355,19 +343,18 @@ else
 hand=game.hand2;
 
 const index=hand.indexOf(card);
-
 if(index===-1) return;
 
 hand.splice(index,1);
 
 if(card==="🌈 Wild"){
 
-await interaction.update({
+game.pendingWildPlayer=interaction.user.id;
+
+await interaction.message.edit({
 content:"Choose color",
 components:[colorMenu()]
 });
-
-game.pendingWildPlayer=interaction.user.id;
 
 return;
 
@@ -377,12 +364,13 @@ apply(card,game,interaction);
 
 }
 
-/* COLOR SELECT */
+/* COLOR */
 
 if(id==="uno_color"){
 
-if(game.pendingWildPlayer!==interaction.user.id)
-return;
+await interaction.deferUpdate();
+
+if(game.pendingWildPlayer!==interaction.user.id) return;
 
 const color=interaction.values[0];
 
@@ -394,9 +382,9 @@ apply(null,game,interaction);
 
 }
 
-/* APPLY CARD */
+/* APPLY */
 
-function apply(card,game,interaction){
+async function apply(card,game,interaction){
 
 if(card && card.includes("+2")){
 
@@ -437,24 +425,22 @@ game.turn===game.player1
 
 if(hand.length===0){
 
+const main=interaction.guild.channels.cache.get(game.mainChannel);
+
+await main.send(`🃏 UNO Duel finished\nWinner: <@${interaction.user.id}>`);
+
 games.delete(interaction.channelId);
 
-interaction.update({
-embeds:[{
-title:"🃏 UNO Duel",
-description:`Winner: <@${interaction.user.id}>`
-}],
-components:[]
-});
+await interaction.channel.delete();
 
 return;
 
 }
 
 const cards=playable(hand,game.top);
-const menuCards=cards.length ? cards : hand;
+const menuCards=cards.length?cards:hand;
 
-interaction.update({
+await interaction.message.edit({
 embeds:[table(game)],
 components:[
 menu(menuCards),
