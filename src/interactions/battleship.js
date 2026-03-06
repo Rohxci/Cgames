@@ -62,10 +62,6 @@ function createEmptyBoard() {
   );
 }
 
-function cloneBoard(board) {
-  return board.map(row => [...row]);
-}
-
 function randomInt(max) {
   return Math.floor(Math.random() * max);
 }
@@ -165,7 +161,7 @@ function remainingShipCells(board) {
   return count;
 }
 
-/* ---------------- PANEL EMBED ---------------- */
+/* ---------------- EMBEDS ---------------- */
 
 function gameEmbed(game) {
   const enemyId = otherPlayer(game, game.turn);
@@ -194,6 +190,27 @@ ${renderEnemyBoard(enemyBoard)}`
   };
 }
 
+function inviteRows(challengerId, opponentId) {
+  return [
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId(`battleship_accept_${challengerId}_${opponentId}`)
+        .setLabel("Accept")
+        .setStyle(ButtonStyle.Success),
+
+      new ButtonBuilder()
+        .setCustomId(`battleship_decline_${challengerId}_${opponentId}`)
+        .setLabel("Decline")
+        .setStyle(ButtonStyle.Secondary),
+
+      new ButtonBuilder()
+        .setCustomId(`battleship_cancel_${challengerId}_${opponentId}`)
+        .setLabel("Cancel")
+        .setStyle(ButtonStyle.Danger)
+    )
+  ];
+}
+
 function gameRows() {
   return [
     new ActionRowBuilder().addComponents(
@@ -220,92 +237,74 @@ function gameRows() {
   ];
 }
 
-/* ---------------- INVITE ROWS ---------------- */
+/* ---------------- FIRE / RADAR PICKERS ---------------- */
 
-function inviteRows(challengerId, opponentId) {
+function letterOptions(start = 0, end = 7) {
+  const arr = [];
+  for (let c = start; c <= end; c++) {
+    arr.push({
+      label: String.fromCharCode(65 + c),
+      value: String.fromCharCode(65 + c)
+    });
+  }
+  return arr;
+}
+
+function numberOptions(start = 1, end = 8) {
+  const arr = [];
+  for (let r = start; r <= end; r++) {
+    arr.push({
+      label: String(r),
+      value: String(r)
+    });
+  }
+  return arr;
+}
+
+function firePickerRows() {
   return [
     new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId("battleship_fire_letter")
+        .setPlaceholder("Choose column")
+        .addOptions(letterOptions(0, 7))
+    ),
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId("battleship_fire_number")
+        .setPlaceholder("Choose row")
+        .addOptions(numberOptions(1, 8))
+    ),
+    new ActionRowBuilder().addComponents(
       new ButtonBuilder()
-        .setCustomId(`battleship_accept_${challengerId}_${opponentId}`)
-        .setLabel("Accept")
-        .setStyle(ButtonStyle.Success),
-
-      new ButtonBuilder()
-        .setCustomId(`battleship_decline_${challengerId}_${opponentId}`)
-        .setLabel("Decline")
-        .setStyle(ButtonStyle.Secondary),
-
-      new ButtonBuilder()
-        .setCustomId(`battleship_cancel_${challengerId}_${opponentId}`)
-        .setLabel("Cancel")
-        .setStyle(ButtonStyle.Danger)
+        .setCustomId("battleship_fire_confirm")
+        .setLabel("Confirm Fire")
+        .setStyle(ButtonStyle.Primary)
     )
   ];
 }
 
-/* ---------------- FIRE / RADAR MENUS ---------------- */
-
-function fireMenus() {
-  const allCoords = [];
-
-  for (let c = 0; c < GRID_SIZE; c++) {
-    for (let r = 0; r < GRID_SIZE; r++) {
-      allCoords.push(indexToCoord(r, c));
-    }
-  }
-
-  const groups = [
-    allCoords.slice(0, 24),
-    allCoords.slice(24, 48),
-    allCoords.slice(48, 64)
+function radarPickerRows() {
+  return [
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId("battleship_radar_letter")
+        .setPlaceholder("Choose radar column")
+        .addOptions(letterOptions(1, 6))
+    ),
+    new ActionRowBuilder().addComponents(
+      new StringSelectMenuBuilder()
+        .setCustomId("battleship_radar_number")
+        .setPlaceholder("Choose radar row")
+        .addOptions(numberOptions(2, 7))
+    ),
+    new ActionRowBuilder().addComponents(
+      new ButtonBuilder()
+        .setCustomId("battleship_radar_confirm")
+        .setLabel("Confirm Radar")
+        .setStyle(ButtonStyle.Secondary)
+    )
   ];
-
-  return groups
-    .filter(group => group.length > 0)
-    .map((group, i) =>
-      new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId(`battleship_fire_select_${i}`)
-          .setPlaceholder(`Choose target (${i + 1})`)
-          .addOptions(
-            group.map(coord => ({
-              label: coord,
-              value: coord
-            }))
-          )
-      )
-    );
-}
-
-function radarMenus() {
-  const centers = [];
-
-  for (let r = 1; r <= 6; r++) {
-    for (let c = 1; c <= 6; c++) {
-      centers.push(indexToCoord(r, c));
-    }
-  }
-
-  const groups = [
-    centers.slice(0, 18),
-    centers.slice(18, 36)
-  ];
-
-  return groups
-    .filter(group => group.length > 0)
-    .map((group, i) =>
-      new ActionRowBuilder().addComponents(
-        new StringSelectMenuBuilder()
-          .setCustomId(`battleship_radar_select_${i}`)
-          .setPlaceholder(`Choose radar center (${i + 1})`)
-          .addOptions(
-            group.map(coord => ({
-              label: coord,
-              value: coord
-            }))
-          )
-      )
-    );
 }
 
 /* ---------------- PANEL FETCH / UPDATE ---------------- */
@@ -531,6 +530,14 @@ module.exports = {
           [challengerId]: false,
           [opponentId]: false
         };
+        game.pendingFire = {
+          [challengerId]: { letter: null, number: null },
+          [opponentId]: { letter: null, number: null }
+        };
+        game.pendingRadar = {
+          [challengerId]: { letter: null, number: null },
+          [opponentId]: { letter: null, number: null }
+        };
         game.boards = {
           [challengerId]: generateRandomBoard(),
           [opponentId]: generateRandomBoard()
@@ -615,7 +622,7 @@ module.exports = {
         return;
       }
 
-      /* ---------------- PLAYER PERMISSION CHECK ---------------- */
+      /* ---------------- PLAYER CHECK ---------------- */
 
       if (game.phase !== "playing") return;
 
@@ -664,17 +671,17 @@ ${renderOwnBoard(game.boards[interaction.user.id])}`,
 
       /* ---------------- TURN CHECK ---------------- */
 
-      const turnOnlyIds = [
-        "battleship_fire",
-        "battleship_radar"
-      ];
+      const turnOnly =
+        id === "battleship_fire" ||
+        id === "battleship_radar" ||
+        id === "battleship_fire_confirm" ||
+        id === "battleship_radar_confirm" ||
+        id === "battleship_fire_letter" ||
+        id === "battleship_fire_number" ||
+        id === "battleship_radar_letter" ||
+        id === "battleship_radar_number";
 
-      const isTurnOnly =
-        turnOnlyIds.includes(id) ||
-        id.startsWith("battleship_fire_select_") ||
-        id.startsWith("battleship_radar_select_");
-
-      if (isTurnOnly && interaction.user.id !== game.turn) {
+      if (turnOnly && interaction.user.id !== game.turn) {
         await safeReply(interaction, {
           content: "Not your turn.",
           ephemeral: true
@@ -685,37 +692,50 @@ ${renderOwnBoard(game.boards[interaction.user.id])}`,
       /* ---------------- FIRE BUTTON ---------------- */
 
       if (id === "battleship_fire") {
+        game.pendingFire[interaction.user.id] = { letter: null, number: null };
+
         await safeReply(interaction, {
-          content: "Choose a target coordinate:",
-          components: fireMenus(),
+          content: "Choose column, row, then confirm your shot.",
+          components: firePickerRows(),
           ephemeral: true
         });
         return;
       }
 
-      /* ---------------- RADAR BUTTON ---------------- */
+      /* ---------------- FIRE PICKERS ---------------- */
 
-      if (id === "battleship_radar") {
-        if (game.radarUsed[interaction.user.id]) {
+      if (id === "battleship_fire_letter" && interaction.isStringSelectMenu()) {
+        game.pendingFire[interaction.user.id].letter = interaction.values[0];
+
+        await safeReply(interaction, {
+          content: `Column selected: ${interaction.values[0]}`,
+          ephemeral: true
+        });
+        return;
+      }
+
+      if (id === "battleship_fire_number" && interaction.isStringSelectMenu()) {
+        game.pendingFire[interaction.user.id].number = interaction.values[0];
+
+        await safeReply(interaction, {
+          content: `Row selected: ${interaction.values[0]}`,
+          ephemeral: true
+        });
+        return;
+      }
+
+      if (id === "battleship_fire_confirm") {
+        const pick = game.pendingFire[interaction.user.id];
+
+        if (!pick.letter || !pick.number) {
           await safeReply(interaction, {
-            content: "You already used your radar.",
+            content: "Choose both a column and a row first.",
             ephemeral: true
           });
           return;
         }
 
-        await safeReply(interaction, {
-          content: "Choose the center of your 3x3 radar scan:",
-          components: radarMenus(),
-          ephemeral: true
-        });
-        return;
-      }
-
-      /* ---------------- FIRE SELECT ---------------- */
-
-      if (id.startsWith("battleship_fire_select_") && interaction.isStringSelectMenu()) {
-        const coord = interaction.values[0];
+        const coord = `${pick.letter}${pick.number}`;
         const result = fireAt(game, interaction.user.id, coord);
 
         if (!result.valid) {
@@ -733,6 +753,8 @@ ${renderOwnBoard(game.boards[interaction.user.id])}`,
         } else {
           game.lastAction = `💦 <@${interaction.user.id}> fired at ${coord} — MISS`;
         }
+
+        game.pendingFire[interaction.user.id] = { letter: null, number: null };
 
         await safeReply(interaction, {
           content: game.lastAction,
@@ -754,9 +776,9 @@ ${renderOwnBoard(game.boards[interaction.user.id])}`,
         return;
       }
 
-      /* ---------------- RADAR SELECT ---------------- */
+      /* ---------------- RADAR BUTTON ---------------- */
 
-      if (id.startsWith("battleship_radar_select_") && interaction.isStringSelectMenu()) {
+      if (id === "battleship_radar") {
         if (game.radarUsed[interaction.user.id]) {
           await safeReply(interaction, {
             content: "You already used your radar.",
@@ -765,10 +787,62 @@ ${renderOwnBoard(game.boards[interaction.user.id])}`,
           return;
         }
 
-        const center = interaction.values[0];
+        game.pendingRadar[interaction.user.id] = { letter: null, number: null };
+
+        await safeReply(interaction, {
+          content: "Choose the center of your 3x3 radar scan, then confirm.",
+          components: radarPickerRows(),
+          ephemeral: true
+        });
+        return;
+      }
+
+      /* ---------------- RADAR PICKERS ---------------- */
+
+      if (id === "battleship_radar_letter" && interaction.isStringSelectMenu()) {
+        game.pendingRadar[interaction.user.id].letter = interaction.values[0];
+
+        await safeReply(interaction, {
+          content: `Radar column selected: ${interaction.values[0]}`,
+          ephemeral: true
+        });
+        return;
+      }
+
+      if (id === "battleship_radar_number" && interaction.isStringSelectMenu()) {
+        game.pendingRadar[interaction.user.id].number = interaction.values[0];
+
+        await safeReply(interaction, {
+          content: `Radar row selected: ${interaction.values[0]}`,
+          ephemeral: true
+        });
+        return;
+      }
+
+      if (id === "battleship_radar_confirm") {
+        if (game.radarUsed[interaction.user.id]) {
+          await safeReply(interaction, {
+            content: "You already used your radar.",
+            ephemeral: true
+          });
+          return;
+        }
+
+        const pick = game.pendingRadar[interaction.user.id];
+
+        if (!pick.letter || !pick.number) {
+          await safeReply(interaction, {
+            content: "Choose both a column and a row first.",
+            ephemeral: true
+          });
+          return;
+        }
+
+        const center = `${pick.letter}${pick.number}`;
         const scan = radarScan(game, interaction.user.id, center);
 
         game.radarUsed[interaction.user.id] = true;
+        game.pendingRadar[interaction.user.id] = { letter: null, number: null };
         game.lastAction = `📡 <@${interaction.user.id}> used Radar on ${center}`;
 
         await safeReply(interaction, {
